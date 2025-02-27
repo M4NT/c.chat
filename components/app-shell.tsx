@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { LogOut, MessageSquare, Users } from "lucide-react"
+import { LogOut, MessageSquare, Users, Loader2 } from "lucide-react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 
@@ -15,38 +15,25 @@ import type { User, Chat, Group } from "@/types"
 import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "./auth-provider"
 import { getSupabase } from "@/lib/supabase"
-import { logoutAction } from "@/app/lib/actions"
+import { logoutAction, initializeChatData } from "@/app/lib/actions"
+import { Database } from "@/types/database.types"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
-// Dados mockados temporários para contatos e chats
-const mockContacts: User[] = [
-  {
-    id: "2",
-    name: "Jane Smith",
-    email: "jane@example.com",
-    status: "online"
-  },
-  {
-    id: "3",
-    name: "Bob Johnson",
-    email: "bob@example.com",
-    status: "offline"
-  },
-  {
-    id: "4",
-    name: "Alice Brown",
-    email: "alice@example.com",
-    status: "away"
-  },
-]
+// Removendo os dados mockados
+// const mockContacts: User[] = [...]
 
 type View = "chat" | "contacts"
+type DbUser = Database['public']['Tables']['users']['Row']
+type DbGroup = Database['public']['Tables']['groups']['Row']
 
 export function AppShell() {
   const { user, signOut } = useAuth()
   const [currentView, setCurrentView] = useState<View>("chat")
   const [selectedChatId, setSelectedChatId] = useState<string>()
   const [chats, setChats] = useState<Chat[]>([])
+  const [contacts, setContacts] = useState<User[]>([]) // Novo estado para contatos
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingContacts, setIsLoadingContacts] = useState(true) // Novo estado para loading de contatos
   const { toast } = useToast()
   const router = useRouter()
 
@@ -64,11 +51,66 @@ export function AppShell() {
     status: "offline"
   }
 
+  // Carregar contatos (todos os usuários exceto o atual)
+  useEffect(() => {
+    const loadContacts = async () => {
+      if (!user) return
+      
+      console.log("Iniciando carregamento de contatos para o usuário:", user.id)
+      setIsLoadingContacts(true)
+      try {
+        const supabase = getSupabase()
+        
+        // Buscar todos os usuários exceto o atual
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, name, email, avatar_url, status, last_seen')
+          .neq('id', user.id)
+          .is('deleted_at', null)
+          .order('name')
+        
+        if (usersError) {
+          console.error("Erro ao buscar usuários:", usersError)
+          throw usersError
+        }
+        
+        console.log("Usuários encontrados:", usersData)
+        
+        // Converter para o formato esperado pelo componente
+        const formattedContacts = (usersData || []).map((userData: any) => ({
+          id: userData.id,
+          name: userData.name,
+          email: userData.email,
+          avatar: userData.avatar_url || undefined,
+          status: userData.status || 'offline'
+        }))
+        
+        console.log("Contatos formatados:", formattedContacts)
+        setContacts(formattedContacts)
+      } catch (error) {
+        console.error('Erro ao carregar contatos:', error)
+        toast({
+          variant: "destructive",
+          title: "Erro ao carregar contatos",
+          description: "Não foi possível carregar seus contatos. Tente novamente mais tarde."
+        })
+      } finally {
+        setIsLoadingContacts(false)
+      }
+    }
+    
+    loadContacts()
+  }, [user, toast])
+
   // Carregar chats do usuário
   useEffect(() => {
     const loadChats = async () => {
-      if (!user) return
+      if (!user) {
+        console.log("Nenhum usuário autenticado, não carregando chats")
+        return
+      }
       
+      console.log("Iniciando busca de chats para o usuário:", user.id)
       setIsLoading(true)
       try {
         const supabase = getSupabase()
@@ -80,15 +122,22 @@ export function AppShell() {
           .eq('user_id', user.id)
           .is('left_at', null)
         
-        if (participantsError) throw participantsError
+        if (participantsError) {
+          console.error("Erro ao buscar participantes:", participantsError)
+          throw participantsError
+        }
         
-        if (!chatParticipants.length) {
+        console.log("Participantes encontrados:", chatParticipants)
+        
+        if (!chatParticipants || chatParticipants.length === 0) {
+          console.log("Nenhum chat encontrado para o usuário")
           setChats([])
           setIsLoading(false)
           return
         }
         
         const chatIds = chatParticipants.map(cp => cp.chat_id)
+        console.log("IDs dos chats:", chatIds)
         
         // Buscar informações dos chats
         const { data: chatsData, error: chatsError } = await supabase
@@ -105,11 +154,25 @@ export function AppShell() {
           .is('deleted_at', null)
           .order('last_message_at', { ascending: false })
         
-        if (chatsError) throw chatsError
+        if (chatsError) {
+          console.error("Erro ao buscar chats:", chatsError)
+          throw chatsError
+        }
+        
+        console.log("Chats encontrados:", chatsData)
+        
+        if (!chatsData || chatsData.length === 0) {
+          console.log("Nenhum chat encontrado com os IDs fornecidos")
+          setChats([])
+          setIsLoading(false)
+          return
+        }
         
         // Para cada chat, buscar os participantes
         const chatsWithParticipants = await Promise.all(
           chatsData.map(async (chat) => {
+            console.log("Processando chat:", chat.id)
+            
             const { data: participants, error: participantsError } = await supabase
               .from('chat_participants')
               .select(`
@@ -119,7 +182,12 @@ export function AppShell() {
               .eq('chat_id', chat.id)
               .is('left_at', null)
             
-            if (participantsError) throw participantsError
+            if (participantsError) {
+              console.error("Erro ao buscar participantes do chat:", participantsError)
+              throw participantsError
+            }
+            
+            console.log("Participantes do chat:", participants)
             
             // Buscar última mensagem
             const { data: lastMessage, error: lastMessageError } = await supabase
@@ -130,12 +198,18 @@ export function AppShell() {
               .order('created_at', { ascending: false })
               .limit(1)
             
-            if (lastMessageError) throw lastMessageError
+            if (lastMessageError) {
+              console.error("Erro ao buscar última mensagem:", lastMessageError)
+              throw lastMessageError
+            }
+            
+            console.log("Última mensagem:", lastMessage)
             
             // Converter para o formato esperado pelo componente
             const formattedParticipants = participants.map(p => {
               // Verificar se p.users existe e é um objeto
               if (!p.users || typeof p.users !== 'object') {
+                console.log("Usuário não encontrado para o participante:", p.user_id)
                 return {
                   id: p.user_id,
                   name: 'Usuário desconhecido',
@@ -145,24 +219,70 @@ export function AppShell() {
                 }
               }
               
+              const userObj = p.users as any
+              
               return {
-                id: p.users.id,
-                name: p.users.name,
-                email: p.users.email,
-                avatar: p.users.avatar_url || undefined,
-                status: p.users.status || 'offline'
+                id: userObj.id,
+                name: userObj.name,
+                email: userObj.email,
+                avatar: userObj.avatar_url || undefined,
+                status: userObj.status || 'offline'
               }
             })
             
-            return {
+            const groupData = chat.groups as any
+            
+            // Verificar se é um chat direto e se tem pelo menos 2 participantes
+            if (chat.type === 'direct' && formattedParticipants.length < 2) {
+              console.log("Chat direto com menos de 2 participantes:", chat.id)
+              
+              // Se for um chat direto, mas só tem o usuário atual, buscar o outro usuário
+              if (formattedParticipants.length === 1 && formattedParticipants[0].id === user.id) {
+                console.log("Buscando outro participante para o chat direto")
+                
+                // Buscar todos os participantes do chat
+                const { data: allParticipants, error: allParticipantsError } = await supabase
+                  .from('chat_participants')
+                  .select('user_id')
+                  .eq('chat_id', chat.id)
+                  .neq('user_id', user.id)
+                  .is('left_at', null)
+                
+                if (!allParticipantsError && allParticipants && allParticipants.length > 0) {
+                  console.log("Outros participantes encontrados:", allParticipants)
+                  
+                  // Buscar informações do outro usuário
+                  const { data: otherUser, error: otherUserError } = await supabase
+                    .from('users')
+                    .select('id, name, email, avatar_url, status')
+                    .eq('id', allParticipants[0].user_id)
+                    .single()
+                  
+                  if (!otherUserError && otherUser) {
+                    console.log("Outro usuário encontrado:", otherUser)
+                    
+                    // Adicionar o outro usuário à lista de participantes
+                    formattedParticipants.push({
+                      id: otherUser.id,
+                      name: otherUser.name,
+                      email: otherUser.email,
+                      avatar: otherUser.avatar_url || undefined,
+                      status: otherUser.status || 'offline'
+                    })
+                  }
+                }
+              }
+            }
+            
+            const chatResult = {
               id: chat.id,
               type: chat.type as 'direct' | 'group',
               participants: formattedParticipants,
-              groupInfo: chat.groups && typeof chat.groups === 'object' ? {
+              groupInfo: groupData ? {
                 id: chat.id,
-                name: chat.groups.name,
-                tag: chat.groups.tag,
-                image: chat.groups.image_url || undefined,
+                name: groupData.name || 'Grupo sem nome',
+                tag: groupData.tag || '',
+                image: groupData.image_url || undefined,
                 participants: formattedParticipants,
                 createdAt: new Date(chat.created_at)
               } : undefined,
@@ -173,12 +293,16 @@ export function AppShell() {
                 undefined,
               timestamp: lastMessage && lastMessage.length > 0 ? 
                 new Date(lastMessage[0].created_at) : 
-                new Date(chat.last_message_at || chat.updated_at),
+                new Date(chat.last_message_at || chat.updated_at || chat.created_at),
               messages: []
             }
+            
+            console.log("Chat processado:", chatResult)
+            return chatResult
           })
         )
         
+        console.log("Todos os chats processados:", chatsWithParticipants)
         setChats(chatsWithParticipants)
       } catch (error) {
         console.error('Erro ao carregar chats:', error)
@@ -472,6 +596,41 @@ export function AppShell() {
     }
   }
 
+  const handleInitializeChat = async () => {
+    try {
+      toast({
+        description: "Inicializando dados de chat...",
+      })
+      
+      const result = await initializeChatData()
+      
+      if (result?.success) {
+        toast({
+          title: "Dados inicializados",
+          description: "Dados de chat inicializados com sucesso. Recarregando a página...",
+        })
+        
+        // Recarregar a página após 2 segundos
+        setTimeout(() => {
+          window.location.reload()
+        }, 2000)
+      } else if (result?.error) {
+        toast({
+          variant: "destructive",
+          title: "Erro ao inicializar dados",
+          description: result.error,
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao inicializar dados de chat:', error)
+      toast({
+        variant: "destructive",
+        title: "Erro ao inicializar dados",
+        description: "Não foi possível inicializar os dados de chat. Tente novamente mais tarde."
+      })
+    }
+  }
+
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
@@ -539,9 +698,9 @@ export function AppShell() {
         selectedId={selectedChatId}
         onSelect={setSelectedChatId}
         onCreateGroup={handleCreateGroup}
-        isLoading={isLoading}
+        isLoading={currentView === "chat" ? isLoading : isLoadingContacts}
         currentView={currentView}
-        contacts={mockContacts}
+        contacts={contacts}
         onStartChat={handleStartChat}
       />
 
@@ -553,8 +712,14 @@ export function AppShell() {
           onSendMessage={(content, type, file) => handleSendMessage(selectedChat.id, content, type, file)}
         />
       ) : (
-        <div className="flex-1 flex items-center justify-center p-4 text-muted-foreground">
-          Selecione uma conversa para começar
+        <div className="flex-1 flex flex-col items-center justify-center p-4 text-muted-foreground">
+          <p className="mb-4">Selecione uma conversa para começar</p>
+          
+          {chats.length === 0 && !isLoading && (
+            <div className="flex flex-col items-center">
+              <p className="mb-4">Você ainda não tem conversas</p>
+            </div>
+          )}
         </div>
       )}
     </div>

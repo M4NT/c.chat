@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Users, Loader2 } from "lucide-react"
+import { Search, Users, Loader2, Database } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -98,14 +98,16 @@ export function ConversationList({
 
       <ScrollArea className="h-[calc(100vh-8.5rem)]">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex flex-col items-center justify-center h-full gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : currentView === "chat" ? (
           <div className="flex flex-col py-2">
             {filteredConversations.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground">
-                Nenhuma conversa encontrada
+              <div className="flex flex-col items-center justify-center p-4 gap-4">
+                <div className="text-center text-muted-foreground">
+                  Nenhuma conversa encontrada
+                </div>
               </div>
             ) : (
               filteredConversations.map((conv) => (

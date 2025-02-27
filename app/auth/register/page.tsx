@@ -1,60 +1,76 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import Image from "next/image"
+import { useFormState, useFormStatus } from "react-dom"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
+import { registerAction } from "@/app/lib/actions"
+
+// Componente para o botão de registro com estado de carregamento
+function RegisterButton() {
+  const { pending } = useFormStatus()
+  
+  return (
+    <Button type="submit" className="w-full" disabled={pending}>
+      {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+      Criar conta
+    </Button>
+  )
+}
+
+// Função para validar senhas iguais
+function validatePasswords(prevState: any, formData: FormData) {
+  const password = formData.get('password') as string
+  const confirmPassword = formData.get('confirmPassword') as string
+  
+  if (password !== confirmPassword) {
+    return { error: 'As senhas não coincidem' }
+  }
+  
+  // Se as senhas coincidirem, prosseguir com o registro
+  return registerAction(prevState, formData)
+}
 
 export default function RegisterPage() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const router = useRouter()
   const { toast } = useToast()
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (password !== confirmPassword) {
+  const router = useRouter()
+  // @ts-ignore - Ignorando erro de tipagem do useFormState com Server Actions
+  const [state, formAction] = useFormState(validatePasswords, { error: null })
+  
+  // Redirecionar quando o registro for bem-sucedido
+  useEffect(() => {
+    if (state?.success) {
       toast({
-        variant: "destructive",
-        title: "As senhas não coincidem",
-        description: "Por favor, verifique as senhas e tente novamente.",
+        title: "Conta criada com sucesso",
+        description: "Você será redirecionado para a página de login.",
       })
-      return
+      // Pequeno atraso para mostrar o toast antes de redirecionar
+      const timeout = setTimeout(() => {
+        router.push('/auth/login')
+      }, 2000)
+      
+      return () => clearTimeout(timeout)
     }
-
-    setIsLoading(true)
-
-    try {
-      // Add your registration logic here
-      await new Promise((resolve) => setTimeout(resolve, 2000)) // Simulate API call
-      router.push("/auth/login")
-      toast({
-        title: "Conta criada com sucesso!",
-        description: "Você já pode fazer login com suas credenciais.",
-      })
-    } catch (error) {
+  }, [state?.success, router, toast])
+  
+  // Mostrar toast de erro quando houver erro no estado
+  useEffect(() => {
+    if (state?.error) {
       toast({
         variant: "destructive",
         title: "Erro ao criar conta",
-        description: "Verifique os dados e tente novamente.",
+        description: state.error,
       })
-    } finally {
-      setIsLoading(false)
     }
-  }
+  }, [state?.error, toast])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -66,59 +82,53 @@ export default function RegisterPage() {
           <CardTitle className="text-2xl">Criar conta</CardTitle>
           <CardDescription>Preencha os dados abaixo para criar sua conta</CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
+        <form action={formAction}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Nome completo</Label>
               <Input
                 id="name"
+                name="name"
                 placeholder="João Silva"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
                 required
-                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
+                name="email"
                 type="email"
                 placeholder="exemplo@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
               <Input
                 id="password"
+                name="password"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
                 required
-                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirmar senha</Label>
               <Input
                 id="confirmPassword"
+                name="confirmPassword"
                 type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                disabled={isLoading}
               />
             </div>
+            {state?.error && (
+              <div className="text-sm text-destructive">
+                {state.error}
+              </div>
+            )}
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Criar conta
-            </Button>
+            <RegisterButton />
             <p className="text-sm text-center text-muted-foreground">
               Já tem uma conta?{" "}
               <Link href="/auth/login" className="text-primary underline-offset-4 hover:underline">

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Users } from "lucide-react"
+import { Search, Users, Loader2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -11,32 +11,20 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { GroupModal } from "@/components/group-modal"
 import { ConversationActions } from "@/components/conversation-actions"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { User } from "@/types"
+import type { ConversationListProps } from "@/types"
 
-interface ConversationListProps {
-  conversations: {
-    id: string
-    type: "direct" | "group"
-    user?: User
-    groupInfo?: {
-      name: string
-      image?: string
-      participants: User[]
-    }
-    lastMessage?: string
-    timestamp: Date
-  }[]
-  onSelect: (id: string) => void
-  selectedId?: string
-  onCreateGroup: (group: {
-    name: string
-    tag: string
-    image?: string
-    participants: string[]
-  }) => Promise<void>
-}
-
-export function ConversationList({ conversations, onSelect, selectedId, onCreateGroup }: ConversationListProps) {
+export function ConversationList({ 
+  conversations, 
+  onSelect, 
+  selectedId, 
+  onCreateGroup,
+  isLoading = false,
+  currentView = "chat",
+  contacts = [],
+  onStartChat
+}: ConversationListProps) {
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const { toast } = useToast()
@@ -45,6 +33,10 @@ export function ConversationList({ conversations, onSelect, selectedId, onCreate
     conv.type === "direct"
       ? conv.user?.name.toLowerCase().includes(searchQuery.toLowerCase())
       : conv.groupInfo?.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  )
+
+  const filteredContacts = contacts.filter((contact) =>
+    contact.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const handleMute = (id: string) => {
@@ -87,7 +79,7 @@ export function ConversationList({ conversations, onSelect, selectedId, onCreate
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar conversas..."
+            placeholder={currentView === "chat" ? "Buscar conversas..." : "Buscar contatos..."}
             className="pl-8"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -105,58 +97,103 @@ export function ConversationList({ conversations, onSelect, selectedId, onCreate
       <Separator />
 
       <ScrollArea className="h-[calc(100vh-8.5rem)]">
-        <div className="flex flex-col py-2">
-          {filteredConversations.map((conv) => (
-            <button
-              key={conv.id}
-              className={`flex items-center gap-3 p-4 hover:bg-accent text-left relative group ${
-                selectedId === conv.id ? "bg-accent" : ""
-              }`}
-              onClick={() => onSelect(conv.id)}
-            >
-              <Avatar>
-                <AvatarImage src={conv.type === "direct" ? conv.user?.avatar : conv.groupInfo?.image} />
-                <AvatarFallback>
-                  {conv.type === "direct"
-                    ? conv.user?.name
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : currentView === "chat" ? (
+          <div className="flex flex-col py-2">
+            {filteredConversations.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground">
+                Nenhuma conversa encontrada
+              </div>
+            ) : (
+              filteredConversations.map((conv) => (
+                <button
+                  key={conv.id}
+                  className={`flex items-center gap-3 p-4 hover:bg-accent text-left relative group ${
+                    selectedId === conv.id ? "bg-accent" : ""
+                  }`}
+                  onClick={() => onSelect(conv.id)}
+                >
+                  <Avatar>
+                    <AvatarImage src={conv.type === "direct" ? conv.user?.avatar : conv.groupInfo?.image} />
+                    <AvatarFallback>
+                      {conv.type === "direct"
+                        ? conv.user?.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                        : conv.groupInfo?.name[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 overflow-hidden">
+                    <div className="font-medium">{conv.type === "direct" ? conv.user?.name : conv.groupInfo?.name}</div>
+                    {conv.type === "group" && (
+                      <div className="text-xs text-muted-foreground mb-1">
+                        {formatParticipants(conv.groupInfo?.participants || [])}
+                      </div>
+                    )}
+                    <div className="text-sm text-muted-foreground truncate">{conv.lastMessage || "Nenhuma mensagem"}</div>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-xs text-muted-foreground group-hover:hidden">
+                      {new Date(conv.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    <ConversationActions
+                      onMute={() => handleMute(conv.id)}
+                      onShare={() => handleShare(conv.id)}
+                      onDelete={() => handleDelete(conv.id)}
+                      onFavorite={() => handleFavorite(conv.id)}
+                    />
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col py-2">
+            {filteredContacts.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground">
+                Nenhum contato encontrado
+              </div>
+            ) : (
+              filteredContacts.map((contact) => (
+                <button
+                  key={contact.id}
+                  className="flex items-center gap-3 p-4 hover:bg-accent text-left"
+                  onClick={() => onStartChat(contact.id)}
+                >
+                  <Avatar>
+                    <AvatarImage src={contact.avatar} />
+                    <AvatarFallback>
+                      {contact.name
                         .split(" ")
                         .map((n) => n[0])
-                        .join("")
-                    : conv.groupInfo?.name[0]}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 overflow-hidden">
-                <div className="font-medium">{conv.type === "direct" ? conv.user?.name : conv.groupInfo?.name}</div>
-                {conv.type === "group" && (
-                  <div className="text-xs text-muted-foreground mb-1">
-                    {formatParticipants(conv.groupInfo?.participants || [])}
+                        .join("")}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="font-medium">{contact.name}</div>
+                    <div className="text-sm text-muted-foreground">{contact.email}</div>
                   </div>
-                )}
-                <div className="text-sm text-muted-foreground truncate">{conv.lastMessage || "Nenhuma mensagem"}</div>
-              </div>
-              <div className="flex items-center">
-                <span className="text-xs text-muted-foreground group-hover:hidden">
-                  {new Date(conv.timestamp).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-                <ConversationActions
-                  onMute={() => handleMute(conv.id)}
-                  onShare={() => handleShare(conv.id)}
-                  onDelete={() => handleDelete(conv.id)}
-                  onFavorite={() => handleFavorite(conv.id)}
-                />
-              </div>
-            </button>
-          ))}
-        </div>
+                  {contact.status === "online" && (
+                    <div className="ml-auto w-2 h-2 rounded-full bg-green-500" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </ScrollArea>
 
       <GroupModal
         open={isGroupModalOpen}
         onOpenChange={setIsGroupModalOpen}
-        contacts={[]} // We'll remove this since we're not using contacts anymore
+        contacts={contacts}
         onCreateGroup={onCreateGroup}
       />
     </div>

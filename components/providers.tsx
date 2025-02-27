@@ -2,7 +2,10 @@
 
 import type React from "react"
 
-import { createContext, useContext, useState } from "react"
+import { createContext, useContext, useEffect, useState } from "react"
+import { initSupabase } from "@/lib/supabase"
+import { AuthProvider } from "./auth-provider"
+import { ThemeProvider } from "./theme-provider"
 
 type Config = {
   supabaseUrl: string
@@ -30,8 +33,8 @@ export function useConfig() {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [config, setConfigState] = useState<Config>({
-    supabaseUrl: "",
-    supabaseKey: "",
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
     whatsappToken: "",
   })
 
@@ -48,9 +51,24 @@ export function Providers({ children }: { children: React.ReactNode }) {
     setIsConfigValidState((prev) => ({ ...prev, ...valid }))
   }
 
+  // Inicializar o cliente Supabase quando o componente for montado
+  useEffect(() => {
+    if (config.supabaseUrl && config.supabaseKey) {
+      try {
+        initSupabase()
+        setIsConfigValid({ supabase: true })
+      } catch (error) {
+        console.error("Erro ao inicializar Supabase:", error)
+        setIsConfigValid({ supabase: false })
+      }
+    }
+  }, [config.supabaseUrl, config.supabaseKey])
+
   return (
     <ConfigContext.Provider value={{ config, setConfig, isConfigValid, setIsConfigValid }}>
-      {children}
+      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        <AuthProvider>{children}</AuthProvider>
+      </ThemeProvider>
     </ConfigContext.Provider>
   )
 }

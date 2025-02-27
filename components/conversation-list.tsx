@@ -1,0 +1,165 @@
+"use client"
+
+import { useState } from "react"
+import { Search, Users } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { GroupModal } from "@/components/group-modal"
+import { ConversationActions } from "@/components/conversation-actions"
+import type { User } from "@/types"
+
+interface ConversationListProps {
+  conversations: {
+    id: string
+    type: "direct" | "group"
+    user?: User
+    groupInfo?: {
+      name: string
+      image?: string
+      participants: User[]
+    }
+    lastMessage?: string
+    timestamp: Date
+  }[]
+  onSelect: (id: string) => void
+  selectedId?: string
+  onCreateGroup: (group: {
+    name: string
+    tag: string
+    image?: string
+    participants: string[]
+  }) => Promise<void>
+}
+
+export function ConversationList({ conversations, onSelect, selectedId, onCreateGroup }: ConversationListProps) {
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const { toast } = useToast()
+
+  const filteredConversations = conversations.filter((conv) =>
+    conv.type === "direct"
+      ? conv.user?.name.toLowerCase().includes(searchQuery.toLowerCase())
+      : conv.groupInfo?.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  )
+
+  const handleMute = (id: string) => {
+    toast({
+      description: "Notificações silenciadas com sucesso.",
+    })
+  }
+
+  const handleShare = (id: string) => {
+    toast({
+      description: "Link de contato copiado para a área de transferência.",
+    })
+  }
+
+  const handleDelete = (id: string) => {
+    toast({
+      description: "Conversa excluída com sucesso.",
+    })
+  }
+
+  const handleFavorite = (id: string) => {
+    toast({
+      description: "Conversa adicionada aos favoritos.",
+    })
+  }
+
+  const formatParticipants = (participants: User[]) => {
+    if (participants.length <= 5) {
+      return participants.map((p) => p.name.split(" ")[0]).join(", ")
+    }
+    return `${participants
+      .slice(0, 5)
+      .map((p) => p.name.split(" ")[0])
+      .join(", ")} +${participants.length - 5}`
+  }
+
+  return (
+    <div className="w-80 border-r">
+      <div className="p-4">
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar conversas..."
+            className="pl-8"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="px-4 py-2">
+        <Button variant="outline" size="sm" className="w-full" onClick={() => setIsGroupModalOpen(true)}>
+          <Users className="h-4 w-4 mr-2" />
+          Criar Grupo
+        </Button>
+      </div>
+
+      <Separator />
+
+      <ScrollArea className="h-[calc(100vh-8.5rem)]">
+        <div className="flex flex-col py-2">
+          {filteredConversations.map((conv) => (
+            <button
+              key={conv.id}
+              className={`flex items-center gap-3 p-4 hover:bg-accent text-left relative group ${
+                selectedId === conv.id ? "bg-accent" : ""
+              }`}
+              onClick={() => onSelect(conv.id)}
+            >
+              <Avatar>
+                <AvatarImage src={conv.type === "direct" ? conv.user?.avatar : conv.groupInfo?.image} />
+                <AvatarFallback>
+                  {conv.type === "direct"
+                    ? conv.user?.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                    : conv.groupInfo?.name[0]}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 overflow-hidden">
+                <div className="font-medium">{conv.type === "direct" ? conv.user?.name : conv.groupInfo?.name}</div>
+                {conv.type === "group" && (
+                  <div className="text-xs text-muted-foreground mb-1">
+                    {formatParticipants(conv.groupInfo?.participants || [])}
+                  </div>
+                )}
+                <div className="text-sm text-muted-foreground truncate">{conv.lastMessage || "Nenhuma mensagem"}</div>
+              </div>
+              <div className="flex items-center">
+                <span className="text-xs text-muted-foreground group-hover:hidden">
+                  {new Date(conv.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                <ConversationActions
+                  onMute={() => handleMute(conv.id)}
+                  onShare={() => handleShare(conv.id)}
+                  onDelete={() => handleDelete(conv.id)}
+                  onFavorite={() => handleFavorite(conv.id)}
+                />
+              </div>
+            </button>
+          ))}
+        </div>
+      </ScrollArea>
+
+      <GroupModal
+        open={isGroupModalOpen}
+        onOpenChange={setIsGroupModalOpen}
+        contacts={[]} // We'll remove this since we're not using contacts anymore
+        onCreateGroup={onCreateGroup}
+      />
+    </div>
+  )
+}
+

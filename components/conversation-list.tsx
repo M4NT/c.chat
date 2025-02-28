@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator"
 import { GroupModal } from "@/components/group-modal"
 import { ConversationActions } from "@/components/conversation-actions"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { User } from "@/types"
 import type { ConversationListProps } from "@/types"
 
@@ -73,6 +74,28 @@ export function ConversationList({
       .join(", ")} +${participants.length - 5}`
   }
 
+  // Componente de skeleton para conversas
+  const ConversationSkeleton = () => (
+    <div className="flex items-center gap-3 p-4 hover:bg-accent">
+      <Skeleton className="h-10 w-10 rounded-full" />
+      <div className="flex-1 space-y-2">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-3 w-1/2" />
+      </div>
+    </div>
+  )
+
+  // Componente de skeleton para contatos
+  const ContactSkeleton = () => (
+    <div className="flex items-center gap-3 p-4 hover:bg-accent">
+      <Skeleton className="h-10 w-10 rounded-full" />
+      <div className="flex-1 space-y-2">
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-3 w-3/4" />
+      </div>
+    </div>
+  )
+
   return (
     <div className="w-80 border-r">
       <div className="p-4">
@@ -98,8 +121,18 @@ export function ConversationList({
 
       <ScrollArea className="h-[calc(100vh-8.5rem)]">
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="flex flex-col py-2">
+            {currentView === "chat" ? (
+              // Skeleton para conversas
+              Array.from({ length: 5 }).map((_, index) => (
+                <ConversationSkeleton key={index} />
+              ))
+            ) : (
+              // Skeleton para contatos
+              Array.from({ length: 8 }).map((_, index) => (
+                <ContactSkeleton key={index} />
+              ))
+            )}
           </div>
         ) : currentView === "chat" ? (
           <div className="flex flex-col py-2">

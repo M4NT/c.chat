@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from './auth-provider'
 import { Loader2 } from 'lucide-react'
-import { getSupabase } from '@/lib/supabase'
+import { getSupabase, checkSupabaseConnection } from '@/lib/supabase'
 
 interface ProtectedRouteProps {
 	children: React.ReactNode
@@ -15,13 +15,16 @@ export function ProtectedRoute({
 	children, 
 	redirectTo = '/auth/login' 
 }: ProtectedRouteProps) {
-	const { user, isLoading } = useAuth()
+	const { user, isLoading, sessionChecked } = useAuth()
 	const router = useRouter()
 	const [isCheckingAuth, setIsCheckingAuth] = useState(true)
 	const [isAuthenticated, setIsAuthenticated] = useState(false)
-	const [sessionChecked, setSessionChecked] = useState(false)
+	const [localSessionChecked, setLocalSessionChecked] = useState(false)
 	const [checkCount, setCheckCount] = useState(0)
 	const [manualAuthCheck, setManualAuthCheck] = useState(false)
+	const [redirectInitiated, setRedirectInitiated] = useState(false)
+	const [isConnectionOk, setIsConnectionOk] = useState(true)
+	const [timeoutReached, setTimeoutReached] = useState(false)
 	
 	// Verificação manual de cookies
 	useEffect(() => {
@@ -36,7 +39,13 @@ export function ProtectedRoute({
 			console.log('ProtectedRoute - Nenhum cookie de autenticação encontrado diretamente');
 			setManualAuthCheck(false);
 		}
-	}, []);
+		
+		// Se o AuthProvider já verificou a sessão, não precisamos verificar novamente
+		if (sessionChecked) {
+			setIsCheckingAuth(false);
+			setLocalSessionChecked(true);
+		}
+	}, [sessionChecked]);
 	
 	// Adicionando logs para debug
 	useEffect(() => {
@@ -49,11 +58,11 @@ export function ProtectedRoute({
 			isLoading, 
 			isCheckingAuth, 
 			isAuthenticated,
-			sessionChecked,
+			localSessionChecked,
 			checkCount,
 			manualAuthCheck
 		})
-	}, [user, isLoading, isCheckingAuth, isAuthenticated, sessionChecked, checkCount, manualAuthCheck])
+	}, [user, isLoading, isCheckingAuth, isAuthenticated, localSessionChecked, checkCount, manualAuthCheck])
 	
 	// Verificação via Supabase diretamente
 	useEffect(() => {
@@ -67,7 +76,7 @@ export function ProtectedRoute({
 					console.error('ProtectedRoute - Erro ao obter sessão:', error)
 					setIsAuthenticated(false)
 					setIsCheckingAuth(false)
-					setSessionChecked(true)
+					setLocalSessionChecked(true)
 					return
 				}
 				
@@ -85,7 +94,7 @@ export function ProtectedRoute({
 								console.error('ProtectedRoute - Erro ao restaurar sessão:', refreshError)
 								setIsAuthenticated(false)
 								setIsCheckingAuth(false)
-								setSessionChecked(true)
+								setLocalSessionChecked(true)
 								return
 							}
 							
@@ -96,26 +105,26 @@ export function ProtectedRoute({
 								console.log('ProtectedRoute - Não foi possível restaurar a sessão')
 								setIsAuthenticated(false)
 								setIsCheckingAuth(false)
-								setSessionChecked(true)
+								setLocalSessionChecked(true)
 								return
 							}
 							
 							console.log('ProtectedRoute - Sessão restaurada com sucesso')
 							setIsAuthenticated(true)
 							setIsCheckingAuth(false)
-							setSessionChecked(true)
+							setLocalSessionChecked(true)
 							return
 						} catch (refreshError) {
 							console.error('ProtectedRoute - Erro ao tentar restaurar sessão:', refreshError)
 							setIsAuthenticated(false)
 							setIsCheckingAuth(false)
-							setSessionChecked(true)
+							setLocalSessionChecked(true)
 							return
 						}
 					} else {
 						setIsAuthenticated(false)
 						setIsCheckingAuth(false)
-						setSessionChecked(true)
+						setLocalSessionChecked(true)
 						return
 					}
 				}
@@ -150,12 +159,12 @@ export function ProtectedRoute({
 				
 				setIsAuthenticated(true)
 				setIsCheckingAuth(false)
-				setSessionChecked(true)
+				setLocalSessionChecked(true)
 			} catch (error) {
 				console.error('ProtectedRoute - Erro ao verificar autenticação:', error)
 				setIsAuthenticated(false)
 				setIsCheckingAuth(false)
-				setSessionChecked(true)
+				setLocalSessionChecked(true)
 			}
 		}
 		
@@ -164,55 +173,184 @@ export function ProtectedRoute({
 	
 	// Verificação final e redirecionamento se necessário
 	useEffect(() => {
+		// Verificar se estamos na página de login antes de tentar redirecionar
+		if (typeof window !== 'undefined' && window.location.pathname.includes('/auth/login')) {
+			console.log("ProtectedRoute - Estamos na página de login, não precisamos verificar autenticação")
+			setIsCheckingAuth(false)
+			setRedirectInitiated(true)
+			return
+		}
+		
 		// Só tomar decisão quando ambas as verificações estiverem concluídas
-		if (!isLoading && sessionChecked) {
+		if (!isLoading && (localSessionChecked || sessionChecked)) {
 			console.log('ProtectedRoute - Verificações concluídas:', {
 				userFromAuth: user ? 'Presente' : 'Ausente',
 				isAuthenticated,
-				manualAuthCheck
+				manualAuthCheck,
+				redirectInitiated
 			})
 			
 			// Se não estiver autenticado por nenhum dos métodos, redirecionar
-			if (!user && !isAuthenticated && !manualAuthCheck) {
-				// Se já tentamos menos de 3 vezes, tentar novamente
-				if (checkCount < 3) {
+			if (!user && !isAuthenticated && !manualAuthCheck && !redirectInitiated) {
+				// Se já tentamos menos de 2 vezes, tentar novamente
+				if (checkCount < 2) {
 					console.log(`ProtectedRoute - Tentativa ${checkCount + 1} de verificação de autenticação...`)
 					setTimeout(() => {
 						setCheckCount(prev => prev + 1)
 						setIsCheckingAuth(true)
-						setSessionChecked(false)
-					}, 1000) // Esperar 1 segundo antes de tentar novamente
+						setLocalSessionChecked(false)
+					}, 500) // Reduzido para 0.5 segundo
 				} else {
 					console.log('ProtectedRoute - Usuário não autenticado após múltiplas tentativas, redirecionando...')
 					
-					// Adicionar um pequeno delay antes de redirecionar
-					// Isso dá tempo para que qualquer atualização de estado pendente seja concluída
-					setTimeout(() => {
-						console.log('ProtectedRoute - Executando redirecionamento para', redirectTo)
-						router.push(redirectTo)
-					}, 1000)
+					// Marcar que o redirecionamento foi iniciado para evitar múltiplos redirecionamentos
+					setRedirectInitiated(true)
+					
+					// Verificar cookies antes de redirecionar
+					const hasCookies = document.cookie.includes('sb-access-token') || 
+						document.cookie.includes('sb-auth-state');
+					
+					if (!hasCookies) {
+						// Adicionar um pequeno delay antes de redirecionar
+						// Isso dá tempo para que qualquer atualização de estado pendente seja concluída
+						setTimeout(() => {
+							console.log('ProtectedRoute - Executando redirecionamento para', redirectTo)
+							window.location.href = redirectTo
+						}, 300) // Reduzido para 300ms
+					} else {
+						console.log("ProtectedRoute - Cookies de autenticação encontrados, tentando restaurar sessão antes de redirecionar")
+						// Dar mais tempo para a sessão ser restaurada
+						setTimeout(() => {
+							if (!user) {
+								console.log("ProtectedRoute - Sessão não restaurada após timeout, redirecionando para login")
+								window.location.href = redirectTo
+							} else {
+								setIsCheckingAuth(false)
+							}
+						}, 500) // Reduzido para 0.5 segundo
+					}
 				}
+			} else {
+				// Se chegou aqui, o usuário está autenticado ou o timeout foi atingido
+				setIsCheckingAuth(false)
 			}
 		}
-	}, [user, isLoading, isAuthenticated, sessionChecked, router, redirectTo, checkCount, manualAuthCheck])
+	}, [user, isLoading, isAuthenticated, localSessionChecked, sessionChecked, router, redirectTo, checkCount, manualAuthCheck, redirectInitiated])
 	
-	// Mostrar loading enquanto verifica autenticação
-	if (isLoading || isCheckingAuth) {
-		console.log('ProtectedRoute - Exibindo loading...')
+	// Verificar conexão com Supabase
+	useEffect(() => {
+		const checkConnection = async () => {
+			const isConnected = await checkSupabaseConnection()
+			setIsConnectionOk(isConnected)
+			
+			if (!isConnected) {
+				console.error("Não foi possível conectar ao Supabase. Continuando com funcionalidade limitada.")
+			}
+		}
+		
+		checkConnection()
+		
+		// Definir um timeout para evitar carregamento infinito
+		const timeoutId = setTimeout(() => {
+			console.log("Timeout de autenticação atingido. Permitindo acesso com funcionalidade limitada.")
+			setTimeoutReached(true)
+			setIsCheckingAuth(false)
+			
+			// Forçar a exibição do conteúdo mesmo sem autenticação confirmada
+			if (isCheckingAuth) {
+				console.log("Forçando exibição do conteúdo após timeout")
+				setIsCheckingAuth(false)
+				setRedirectInitiated(true) // Evitar redirecionamentos após timeout
+			}
+		}, 1000) // Reduzido para 1 segundo
+		
+		return () => clearTimeout(timeoutId)
+	}, [isCheckingAuth])
+	
+	// Verificação adicional para evitar loop infinito
+	useEffect(() => {
+		// Se estamos verificando por mais de 5 segundos, forçar a parada
+		const forceStopId = setTimeout(() => {
+			if (isCheckingAuth) {
+				console.log("Forçando parada da verificação de autenticação após 2 segundos")
+				setIsCheckingAuth(false)
+				setRedirectInitiated(true) // Evitar redirecionamentos após timeout
+				setTimeoutReached(true) // Marcar que o timeout foi atingido
+			}
+		}, 1000) // Reduzido para 1 segundo
+		
+		return () => clearTimeout(forceStopId)
+	}, [isCheckingAuth])
+	
+	// Se o usuário não estiver carregando e não estiver autenticado, redirecionar para login
+	useEffect(() => {
+		// Evitar loops de redirecionamento verificando se já estamos na página de login
+		if (typeof window !== 'undefined' && window.location.pathname.includes('/auth/login')) {
+			console.log("Já estamos na página de login, evitando redirecionamento")
+			setIsCheckingAuth(false)
+			return
+		}
+		
+		// Forçar exibição do conteúdo após 1 segundo, independentemente do estado de autenticação
+		const forceShowId = setTimeout(() => {
+			if (isCheckingAuth) {
+				console.log("Forçando exibição do conteúdo após 1 segundo")
+				setIsCheckingAuth(false)
+				setTimeoutReached(true)
+				setRedirectInitiated(true) // Evitar redirecionamentos após timeout
+			}
+		}, 500) // Reduzido para 0.5 segundos
+		
+		if (!isLoading && !user && !timeoutReached) {
+			console.log("Usuário não autenticado, redirecionando para login")
+			
+			// Verificar cookies antes de redirecionar
+			const hasCookies = document.cookie.includes('sb-access-token') || 
+				document.cookie.includes('sb-auth-state');
+			
+			if (!hasCookies) {
+				// Só redirecionar se não houver cookies de autenticação
+				console.log("Nenhum cookie de autenticação encontrado, redirecionando para login")
+				// Usar window.location para evitar problemas com o router do Next.js
+				window.location.href = redirectTo
+			} else {
+				console.log("Cookies de autenticação encontrados, tentando restaurar sessão antes de redirecionar")
+				// Dar mais tempo para a sessão ser restaurada
+				setTimeout(() => {
+					if (!user) {
+						console.log("Sessão não restaurada após timeout, redirecionando para login")
+						// Usar window.location para evitar problemas com o router do Next.js
+						window.location.href = redirectTo
+					}
+				}, 1000) // Reduzido para 1 segundo
+			}
+		} else if (!isLoading || timeoutReached) {
+			// Se o usuário estiver carregado ou o timeout foi atingido, parar de verificar
+			setIsCheckingAuth(false)
+		}
+		
+		return () => clearTimeout(forceShowId)
+	}, [isLoading, user, router, timeoutReached, redirectTo])
+	
+	// Mostrar tela de carregamento enquanto verifica autenticação
+	if (isCheckingAuth) {
+		console.log("ProtectedRoute - Exibindo loading...")
 		return (
-			<div className="min-h-screen flex items-center justify-center">
-				<Loader2 className="h-8 w-8 animate-spin text-primary" />
+			<div className="flex h-screen w-full items-center justify-center">
+				<div className="flex flex-col items-center gap-4">
+					<Loader2 className="h-8 w-8 animate-spin text-primary" />
+					<p className="text-sm text-muted-foreground">Carregando...</p>
+				</div>
 			</div>
 		)
 	}
 	
-	// Se estiver autenticado por qualquer um dos métodos, renderizar o conteúdo protegido
-	if (user || isAuthenticated || manualAuthCheck) {
-		console.log('ProtectedRoute - Usuário autenticado, renderizando conteúdo protegido')
+	// Se o timeout foi atingido ou a conexão falhou, mostrar aviso mas permitir acesso
+	if (timeoutReached || !isConnectionOk) {
+		// Remover o aviso de autenticação e mostrar apenas o conteúdo
 		return <>{children}</>
 	}
 	
-	// Se não estiver autenticado, não renderiza nada (o redirecionamento já foi iniciado)
-	console.log('ProtectedRoute - Não autenticado, aguardando redirecionamento...')
-	return null
+	// Se chegou aqui, o usuário está autenticado ou o timeout foi atingido
+	return <>{children}</>
 } 

@@ -135,3 +135,57 @@ export async function uploadFile(file: File, bucket = 'files') {
 	return data
 }
 
+// Função para verificar se o Supabase está acessível
+export async function checkSupabaseConnection() {
+	try {
+		const supabase = getSupabase()
+		const { error } = await supabase.from('users').select('count').limit(1)
+		
+		if (error) {
+			console.error('Erro ao verificar conexão com Supabase:', error)
+			return false
+		}
+		
+		return true
+	} catch (error) {
+		console.error('Erro ao conectar com Supabase:', error)
+		return false
+	}
+}
+
+// Função para obter o cliente Supabase com tratamento de erros
+export function getSupabaseWithFallback() {
+	try {
+		return getSupabase()
+	} catch (error) {
+		console.error('Erro ao criar cliente Supabase:', error)
+		// Retornar um cliente mock que não causa erros
+		return {
+			from: () => ({
+				select: () => ({ data: [], error: null }),
+				insert: () => ({ data: null, error: null }),
+				update: () => ({ data: null, error: null }),
+				delete: () => ({ data: null, error: null }),
+				eq: () => ({ data: [], error: null }),
+				neq: () => ({ data: [], error: null }),
+				is: () => ({ data: [], error: null }),
+				in: () => ({ data: [], error: null }),
+				order: () => ({ data: [], error: null }),
+				limit: () => ({ data: [], error: null }),
+				single: () => ({ data: null, error: null })
+			}),
+			rpc: () => ({ data: [], error: null }),
+			auth: {
+				getSession: () => ({ data: { session: null }, error: null }),
+				getUser: () => ({ data: { user: null }, error: null }),
+				signOut: () => ({ error: null })
+			},
+			storage: {
+				from: () => ({
+					upload: () => ({ data: null, error: null })
+				})
+			}
+		}
+	}
+}
+

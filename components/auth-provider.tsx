@@ -5,12 +5,21 @@ import { useRouter } from 'next/navigation'
 import { getCurrentUser, getSupabase, signIn, signOut, signUp } from '@/lib/supabase'
 import { Database } from '@/types/database.types'
 
+// Função para obter o valor de um cookie pelo nome
+function getCookieValue(name: string): string | null {
+	if (typeof document === 'undefined') return null
+	
+	const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
+	return match ? decodeURIComponent(match[2]) : null
+}
+
 type User = Database['public']['Tables']['users']['Row']
 
 interface AuthContextType {
 	user: User | null
 	isLoading: boolean
 	sessionChecked: boolean
+	authError: string | null
 	signUp: (email: string, password: string, name: string) => Promise<void>
 	signIn: (email: string, password: string) => Promise<void>
 	signOut: () => Promise<void>
@@ -22,7 +31,158 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [user, setUser] = useState<User | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
 	const [sessionChecked, setSessionChecked] = useState(false)
+	const [authError, setAuthError] = useState<string | null>(null)
 	const router = useRouter()
+	
+	// Verificar se estamos em uma página de autenticação
+	useEffect(() => {
+		if (typeof window !== 'undefined') {
+			const path = window.location.pathname
+			const isAuthPath = path.includes('/auth/login') || path.includes('/auth/register')
+			
+			// Se estamos em uma página de autenticação, não precisamos verificar a sessão
+			if (isAuthPath) {
+				setIsLoading(false)
+				setSessionChecked(true)
+			}
+		}
+	}, [])
+	
+	// Verificar sessão ao carregar
+	useEffect(() => {
+		// Definir um timeout para evitar verificação infinita
+		const timeoutId = setTimeout(() => {
+			if (isLoading) {
+				console.log("AuthProvider: Timeout de verificação de sessão atingido")
+				setIsLoading(false)
+				setSessionChecked(true)
+			}
+		}, 2000) // Timeout reduzido para 2 segundos
+		
+		const checkSession = async () => {
+			try {
+				console.log("AuthProvider: Verificando sessão...")
+				
+				// Verificar cookies diretamente
+				const hasAuthCookies = 
+					getCookieValue('sb-access-token') || 
+					getCookieValue('sb-refresh-token') ||
+					getCookieValue('sb-auth-state')
+				
+				if (!hasAuthCookies) {
+					console.log("AuthProvider: Nenhum cookie de autenticação encontrado")
+					setUser(null)
+					setIsLoading(false)
+					setSessionChecked(true)
+					return
+				}
+				
+				console.log("AuthProvider: Cookies de autenticação encontrados, buscando sessão")
+				
+				const supabase = getSupabase()
+				const { data: { session }, error } = await supabase.auth.getSession()
+				
+				if (error) {
+					console.error("AuthProvider: Erro ao obter sessão:", error)
+					setAuthError(error.message)
+					setUser(null)
+					setIsLoading(false)
+					setSessionChecked(true)
+					return
+				}
+				
+				if (!session) {
+					console.log("AuthProvider: Nenhuma sessão encontrada, tentando restaurar")
+					
+					try {
+						// Tentar restaurar a sessão
+						const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+						
+						if (refreshError) {
+							console.error("AuthProvider: Erro ao restaurar sessão:", refreshError)
+							setAuthError(refreshError.message)
+							setUser(null)
+							setIsLoading(false)
+							setSessionChecked(true)
+							return
+						}
+						
+						if (!refreshData.session) {
+							console.log("AuthProvider: Não foi possível restaurar a sessão")
+							setUser(null)
+							setIsLoading(false)
+							setSessionChecked(true)
+							return
+						}
+						
+						console.log("AuthProvider: Sessão restaurada com sucesso")
+						
+						// Buscar dados do usuário
+						const { data: userData, error: userError } = await supabase
+							.from('users')
+							.select('*')
+							.eq('id', refreshData.session.user.id)
+							.single()
+						
+						if (userError) {
+							console.error("AuthProvider: Erro ao buscar dados do usuário:", userError)
+							setAuthError(userError.message)
+							setUser(null)
+							setIsLoading(false)
+							setSessionChecked(true)
+							return
+						}
+						
+						// Definir usuário
+						setUser(userData)
+						
+						setIsLoading(false)
+						setSessionChecked(true)
+						return
+					} catch (error) {
+						console.error("AuthProvider: Erro ao restaurar sessão:", error)
+						setUser(null)
+						setIsLoading(false)
+						setSessionChecked(true)
+						return
+					}
+				}
+				
+				console.log("AuthProvider: Sessão encontrada para usuário:", session.user.id)
+				
+				// Buscar dados completos do usuário
+				const { data: userData, error: userError } = await supabase
+					.from('users')
+					.select('*')
+					.eq('id', session.user.id)
+					.single()
+				
+				if (userError) {
+					console.error("AuthProvider: Erro ao buscar dados do usuário:", userError)
+					setAuthError(userError.message)
+					setUser(null)
+					setIsLoading(false)
+					setSessionChecked(true)
+					return
+				}
+				
+				// Definir usuário
+				setUser(userData)
+				
+				setIsLoading(false)
+				setSessionChecked(true)
+			} catch (error) {
+				console.error("AuthProvider: Erro ao verificar sessão:", error)
+				setUser(null)
+				setIsLoading(false)
+				setSessionChecked(true)
+			}
+		}
+		
+		checkSession()
+		
+		return () => clearTimeout(timeoutId)
+	}, [])
 	
 	// Verificar se há cookies de autenticação
 	const checkAuthCookies = useCallback(() => {
@@ -64,6 +224,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 						
 						if (refreshError) {
 							console.error('AuthProvider - Erro ao restaurar sessão:', refreshError)
+							
+							// Tentar fazer login novamente usando os cookies
+							try {
+								console.log('AuthProvider - Tentando reautenticar com os cookies...')
+								
+								// Forçar uma nova autenticação usando os tokens dos cookies
+								const accessToken = getCookieValue('sb-access-token')
+								const refreshToken = getCookieValue('sb-refresh-token')
+								
+								if (accessToken && refreshToken) {
+									const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+										access_token: accessToken,
+										refresh_token: refreshToken
+									})
+									
+									if (sessionError) {
+										console.error('AuthProvider - Erro ao definir sessão com tokens dos cookies:', sessionError)
+										setUser(null)
+										setIsLoading(false)
+										setSessionChecked(true)
+										return null
+									}
+									
+									if (sessionData.session) {
+										console.log('AuthProvider - Sessão restaurada com tokens dos cookies:', {
+											userId: sessionData.session.user.id,
+											email: sessionData.session.user.email
+										})
+										
+										// Buscar dados completos do usuário
+										const { data: userData, error: userError } = await supabase
+											.from('users')
+											.select('*')
+											.eq('id', sessionData.session.user.id)
+											.single()
+										
+										if (userError) {
+											console.error('AuthProvider - Erro ao buscar dados do usuário após restaurar sessão:', userError)
+										}
+										
+										if (userData) {
+											setUser(userData)
+											setIsLoading(false)
+											setSessionChecked(true)
+											return sessionData.session
+										}
+									}
+								} else {
+									console.log('AuthProvider - Tokens não encontrados nos cookies')
+								}
+							} catch (reAuthError) {
+								console.error('AuthProvider - Erro ao reautenticar com cookies:', reAuthError)
+							}
+							
 							setUser(null)
 							setIsLoading(false)
 							setSessionChecked(true)
@@ -90,14 +304,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 								console.error('AuthProvider - Erro ao buscar dados do usuário após restaurar sessão:', userError)
 							}
 							
-							const fullUser = userData 
-								? { ...refreshData.session.user, ...userData }
-								: refreshData.session.user
-							
-							setUser(fullUser as User)
-							setIsLoading(false)
-							setSessionChecked(true)
-							return refreshData.session
+							if (userData) {
+								setUser(userData)
+								setIsLoading(false)
+								setSessionChecked(true)
+								return refreshData.session
+							}
 						}
 					} catch (refreshError) {
 						console.error('AuthProvider - Erro ao tentar restaurar sessão:', refreshError)
@@ -129,14 +341,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				console.error('AuthProvider - Erro ao buscar dados do usuário:', userError)
 			}
 			
-			const fullUser = userData 
-				? { ...session.user, ...userData }
-				: session.user
+			if (userData) {
+				setUser(userData)
+				setIsLoading(false)
+				setSessionChecked(true)
+				return session
+			}
 			
-			setUser(fullUser as User)
+			setUser(null)
 			setIsLoading(false)
 			setSessionChecked(true)
-			return session
+			return null
 		} catch (error) {
 			console.error('AuthProvider - Erro ao verificar sessão:', error)
 			setUser(null)
@@ -149,7 +364,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	// Verificar sessão ao montar o componente
 	useEffect(() => {
 		console.log('AuthProvider - Inicializando verificação de sessão...')
-		checkCurrentSession()
+		// Se estamos em uma página de autenticação, não precisamos verificar a sessão
+		if (typeof window !== 'undefined') {
+			const path = window.location.pathname
+			const isAuthPath = path.includes('/auth/login') || path.includes('/auth/register')
+			
+			if (!isAuthPath) {
+				checkCurrentSession()
+			}
+		}
 	}, [checkCurrentSession])
 	
 	// Configurar listeners de autenticação
@@ -182,13 +405,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 					console.error('AuthProvider - Erro ao buscar dados do usuário após login:', userError)
 				}
 				
-				const fullUser = userData 
-					? { ...session.user, ...userData }
-					: session.user
-				
-				setUser(fullUser as User)
-				setIsLoading(false)
-				setSessionChecked(true)
+				if (userData) {
+					setUser(userData)
+					setIsLoading(false)
+					setSessionChecked(true)
+				}
 			} else if (event === 'SIGNED_OUT') {
 				console.log('AuthProvider - Usuário desconectado, limpando estado...')
 				setUser(null)
@@ -261,7 +482,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			}
 			
 			console.log('AuthProvider - Login bem-sucedido, redirecionando...')
-			router.push('/')
+			// Usar window.location para evitar problemas com o router do Next.js
+			window.location.href = '/'
 		} catch (error) {
 			console.error('AuthProvider - Erro ao fazer login:', error)
 			throw error
@@ -278,7 +500,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			await signOut()
 			setUser(null)
 			console.log('AuthProvider - Logout bem-sucedido, redirecionando...')
-			router.push('/auth/login')
+			// Usar window.location para evitar problemas com o router do Next.js
+			window.location.href = '/auth/login'
 		} catch (error) {
 			console.error('AuthProvider - Erro ao fazer logout:', error)
 			throw error
@@ -291,6 +514,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		user,
 		isLoading,
 		sessionChecked,
+		authError,
 		signUp: handleSignUp,
 		signIn: handleSignIn,
 		signOut: handleSignOut,

@@ -1025,7 +1025,7 @@ export function AppShell() {
       {/* Sidebar */}
       <div className="w-20 border-r flex flex-col items-center py-4 gap-6">
         <div className="w-12 h-12">
-          <Image src="/placeholder.svg" alt="Logo" width={48} height={48} className="rounded-lg" />
+          <Image src="/saudecredlogo.svg" alt="SaudeCred Logo" width={48} height={48} className="rounded-lg" />
         </div>
         <Separator />
         <Button

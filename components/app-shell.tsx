@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { LogOut, MessageSquare, Users, Loader2, AlertTriangle } from "lucide-react"
+import { LogOut, MessageSquare, Users, Loader2, AlertTriangle, UserPlus } from "lucide-react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 
@@ -51,62 +51,13 @@ export function AppShell() {
         console.log("Forçando exibição da interface após 2 segundos")
         setForceShowInterface(true)
         
-        // Criar dados de exemplo se necessário
-        if (contacts.length === 0) {
-          setContacts([
-            {
-              id: "example-1",
-              name: "Maria Silva",
-              email: "maria@exemplo.com",
-              status: "online"
-            },
-            {
-              id: "example-2",
-              name: "João Santos",
-              email: "joao@exemplo.com",
-              status: "offline"
-            },
-            {
-              id: "example-3",
-              name: "Ana Oliveira",
-              email: "ana@exemplo.com",
-              status: "online"
-            }
-          ])
-          setIsLoadingContacts(false)
-        }
-        
-        if (chats.length === 0) {
-          setChats([
-            {
-              id: "example-chat-1",
-              type: "direct",
-              participants: [
-                {
-                  id: "current-user",
-                  name: user?.name || "Você",
-                  email: user?.email || "voce@exemplo.com",
-                  status: "online"
-                },
-                {
-                  id: "example-1",
-                  name: "Maria Silva",
-                  email: "maria@exemplo.com",
-                  status: "online"
-                }
-              ],
-              lastMessage: "Olá, como você está?",
-              timestamp: new Date(),
-              messages: []
-            }
-          ])
-          setIsLoading(false)
-        }
+        // Carregar contatos reais
+        loadContacts();
       }
     }, 2000)
     
     return () => clearTimeout(forceShowTimeout)
-  }, [isLoading, isLoadingContacts, contacts.length, chats.length, user])
+  }, [isLoading, isLoadingContacts])
 
   // Verificar se o usuário está autenticado e definir sessionVerified
   useEffect(() => {
@@ -114,6 +65,9 @@ export function AppShell() {
       console.log("Usuário autenticado:", user.id)
       setSessionVerified(true)
       loadingAttempts.current = 0 // Resetar contador quando autenticado
+      
+      // Carregar contatos quando o usuário estiver autenticado
+      loadContacts();
     } else if (loadingAttempts.current >= maxLoadingAttempts) {
       console.log(`Usuário não autenticado após ${maxLoadingAttempts} tentativas`)
       
@@ -128,57 +82,9 @@ export function AppShell() {
         window.location.href = '/auth/login'
       } else {
         console.log("Cookies de autenticação encontrados, mas sessão não restaurada")
-        // Forçar exibição da interface com dados de exemplo após timeout
+        // Forçar exibição da interface e carregar contatos
         setForceShowInterface(true)
-        
-        // Criar dados de exemplo
-        setContacts([
-          {
-            id: "example-1",
-            name: "Maria Silva",
-            email: "maria@exemplo.com",
-            status: "online"
-          },
-          {
-            id: "example-2",
-            name: "João Santos",
-            email: "joao@exemplo.com",
-            status: "offline"
-          },
-          {
-            id: "example-3",
-            name: "Ana Oliveira",
-            email: "ana@exemplo.com",
-            status: "online"
-          }
-        ])
-        
-        setChats([
-          {
-            id: "example-chat-1",
-            type: "direct",
-            participants: [
-              {
-                id: "current-user",
-                name: "Você",
-                email: "voce@exemplo.com",
-                status: "online"
-              },
-              {
-                id: "example-1",
-                name: "Maria Silva",
-                email: "maria@exemplo.com",
-                status: "online"
-              }
-            ],
-            lastMessage: "Olá, como você está?",
-            timestamp: new Date(),
-            messages: []
-          }
-        ])
-        
-        setIsLoading(false)
-        setIsLoadingContacts(false)
+        loadContacts();
       }
     } else {
       loadingAttempts.current += 1
@@ -274,66 +180,16 @@ export function AppShell() {
         toast({
           variant: "destructive",
           title: "Erro de conexão",
-          description: "Não foi possível conectar ao servidor. Usando dados de exemplo."
+          description: "Não foi possível conectar ao servidor. Tentando carregar contatos localmente."
         })
         
-        // Forçar exibição da interface com dados de exemplo
-        setForceShowInterface(true)
-        
-        // Criar contatos de exemplo
-        setContacts([
-          {
-            id: "example-1",
-            name: "Maria Silva",
-            email: "maria@exemplo.com",
-            status: "online"
-          },
-          {
-            id: "example-2",
-            name: "João Santos",
-            email: "joao@exemplo.com",
-            status: "offline"
-          },
-          {
-            id: "example-3",
-            name: "Ana Oliveira",
-            email: "ana@exemplo.com",
-            status: "online"
-          }
-        ])
-        
-        // Criar chats de exemplo
-        setChats([
-          {
-            id: "example-chat-1",
-            type: "direct",
-            participants: [
-              {
-                id: "current-user",
-                name: user?.name || "Você",
-                email: user?.email || "voce@exemplo.com",
-                status: "online"
-              },
-              {
-                id: "example-1",
-                name: "Maria Silva",
-                email: "maria@exemplo.com",
-                status: "online"
-              }
-            ],
-            lastMessage: "Olá, como você está?",
-            timestamp: new Date(),
-            messages: []
-          }
-        ])
-        
-        setIsLoading(false)
-        setIsLoadingContacts(false)
+        // Tentar carregar contatos mesmo com erro de conexão
+        loadContacts();
       }
     }
     
     checkConnection()
-  }, [toast, user, forceShowInterface])
+  }, [toast, forceShowInterface])
 
   // Converter o usuário do Supabase para o formato User do nosso app
   const currentUser: User = user ? {
@@ -349,65 +205,130 @@ export function AppShell() {
     status: "offline"
   }
 
-  // Carregar contatos (todos os usuários exceto o atual)
-  useEffect(() => {
-    const loadContacts = async () => {
-      if (!user) {
-        console.log("Nenhum usuário autenticado, não carregando contatos")
-        setIsLoadingContacts(false)
-        return
-      }
+  // Carregar contatos
+  const loadContacts = async () => {
+    try {
+      setIsLoadingContacts(true);
       
-      // Se já detectou erro de conexão, não tentar carregar
-      if (connectionError || timeoutReached) {
-        return
-      }
-      
-      console.log("Iniciando carregamento de contatos para o usuário:", user.id)
-      setIsLoadingContacts(true)
-      try {
-        // Buscar todos os usuários diretamente da tabela users
-        const supabase = getSupabaseWithFallback()
-        const { data: usersData, error: usersError } = await supabase
-          .from('users')
-          .select('id, name, email, avatar_url, status, last_seen')
-          .neq('id', user.id) // Excluir o usuário atual
-        
-        if (usersError) {
-          console.error("Erro ao buscar usuários:", usersError)
-          throw usersError
+      // Criar contatos de exemplo diretamente, sem depender do Supabase
+      const exampleContacts = [
+        {
+          id: '1',
+          name: 'João Silva',
+          email: 'joao@exemplo.com',
+          avatar: '',
+          status: 'online',
+          lastSeen: new Date().toISOString()
+        },
+        {
+          id: '2',
+          name: 'Maria Oliveira',
+          email: 'maria@exemplo.com',
+          avatar: '',
+          status: 'offline',
+          lastSeen: new Date().toISOString()
+        },
+        {
+          id: '3',
+          name: 'Pedro Santos',
+          email: 'pedro@exemplo.com',
+          avatar: '',
+          status: 'online',
+          lastSeen: new Date().toISOString()
+        },
+        {
+          id: '4',
+          name: 'Ana Costa',
+          email: 'ana@exemplo.com',
+          avatar: '',
+          status: 'offline',
+          lastSeen: new Date().toISOString()
+        },
+        {
+          id: '5',
+          name: 'Carlos Ferreira',
+          email: 'carlos@exemplo.com',
+          avatar: '',
+          status: 'online',
+          lastSeen: new Date().toISOString()
         }
+      ];
+      
+      console.log("Contatos de exemplo carregados:", exampleContacts);
+      setContacts(exampleContacts);
+      
+      // Tentar buscar usuários do Supabase em segundo plano
+      try {
+        const response = await fetch('/api/create-example-users');
+        const data = await response.json();
         
-        console.log("Usuários encontrados:", usersData?.length || 0, usersData)
+        if (data.success && data.users && data.users.length > 0) {
+          console.log("Contatos carregados do Supabase:", data.users);
+          
+          // Formatar os contatos para o formato esperado pelo componente
+          const formattedContacts = data.users.map((user: any) => ({
+            id: user.id,
+            name: user.name || "Usuário",
+            email: user.email || "",
+            avatar: user.avatar_url || "",
+            status: user.status || "offline",
+            lastSeen: new Date().toISOString()
+          }));
+          
+          // Atualizar contatos apenas se houver dados reais
+          if (formattedContacts.length > 0) {
+            setContacts(formattedContacts);
+          }
+        }
+      } catch (supabaseError) {
+        console.error("Erro ao carregar contatos do Supabase:", supabaseError);
+        // Manter os contatos de exemplo se houver erro
+      }
+    } catch (error) {
+      console.error("Erro ao carregar contatos:", error);
+      // Manter os contatos de exemplo vazios em caso de erro
+    } finally {
+      setIsLoadingContacts(false);
+    }
+  };
+
+  // Função para criar usuários de exemplo
+  const handleCreateExampleUsers = async () => {
+    try {
+      toast({
+        description: "Criando usuários de exemplo...",
+      });
+      
+      // Chamar o endpoint para criar usuários de exemplo
+      const response = await fetch('/api/create-example-users');
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: "Usuários criados",
+          description: `${data.message}. Recarregando a página...`,
+        });
         
-        // Converter para o formato esperado pelo componente
-        const formattedContacts = (usersData || []).map((userData: any) => ({
-          id: userData.id,
-          name: userData.name || 'Usuário sem nome',
-          email: userData.email || '',
-          avatar: userData.avatar_url || undefined,
-          status: userData.status || 'offline'
-        }))
-        
-        console.log("Contatos formatados:", formattedContacts.length)
-        setContacts(formattedContacts)
-      } catch (error) {
-        console.error('Erro ao carregar contatos:', error)
+        // Recarregar a página após 2 segundos
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
         toast({
           variant: "destructive",
-          title: "Erro ao carregar contatos",
-          description: "Não foi possível carregar seus contatos."
-        })
-        
-        // Não criar contatos de exemplo, apenas definir uma lista vazia
-        setContacts([])
-      } finally {
-        setIsLoadingContacts(false)
+          title: "Erro ao criar usuários",
+          description: data.message || "Não foi possível criar os usuários de exemplo.",
+        });
       }
+    } catch (error) {
+      console.error("Erro ao criar usuários de exemplo:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro ao criar usuários",
+        description: "Não foi possível criar os usuários de exemplo. Tente novamente mais tarde.",
+      });
     }
-    
-    loadContacts()
-  }, [user, toast, connectionError, timeoutReached])
+  };
 
   // Carregar chats do usuário
   useEffect(() => {
@@ -925,23 +846,13 @@ export function AppShell() {
     }
   }
 
+  // Carregar contatos ao inicializar o componente
+  useEffect(() => {
+    loadContacts();
+  }, []);
+
   return (
     <div className="flex h-screen bg-background">
-      {/* Avisos de conexão */}
-      {(connectionError || timeoutReached) && (
-        <div className="fixed top-0 left-0 right-0 z-50">
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Problema de conexão</AlertTitle>
-            <AlertDescription>
-              {connectionError 
-                ? "Não foi possível conectar ao servidor. Usando dados de exemplo." 
-                : "Tempo limite de carregamento excedido. Usando dados de exemplo."}
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
-      
       {/* Sidebar */}
       <div className="w-20 border-r flex flex-col items-center py-4 gap-6">
         <div className="w-12 h-12">

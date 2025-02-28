@@ -3,13 +3,19 @@ import { createExampleUsers } from '@/app/lib/actions'
 
 export async function GET() {
   try {
+    console.log("API: Buscando usuários cadastrados...");
     const result = await createExampleUsers()
     
+    console.log("API: Resultado da busca de usuários:", result);
     return NextResponse.json(result)
   } catch (error) {
-    console.error('Erro ao criar usuários de exemplo:', error)
+    console.error("API: Erro ao buscar usuários:", error);
     return NextResponse.json(
-      { error: 'Erro ao criar usuários de exemplo' },
+      { 
+        success: false, 
+        message: "Erro ao buscar usuários", 
+        error: error instanceof Error ? error.message : String(error) 
+      },
       { status: 500 }
     )
   }

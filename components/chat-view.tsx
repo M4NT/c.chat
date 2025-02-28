@@ -123,11 +123,10 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
       setMessages((prev) => [...prev, message])
       scrollToBottom()
 
-      // Create a File from the Blob
-      const audioFile = new File([blob], "audio.webm", {
-        type: "audio/webm;codecs=opus",
-        lastModified: Date.now(),
-      })
+      // Create a File from the Blob (corrigindo o erro de linter)
+      const audioFile = new File([blob], "audio.webm", { 
+        type: "audio/webm"
+      }) as File;
 
       try {
         // Send the audio file
@@ -172,8 +171,8 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
   }
 
   return (
-    <>
-      {/* Chat Header */}
+    <div className="flex flex-col h-full w-full flex-1 overflow-hidden">
+      {/* Chat Header - Fixo no topo */}
       <div className="border-b p-4 flex items-center justify-between bg-white shadow-sm">
         <div className="flex items-center gap-3">
           <Avatar>
@@ -244,7 +243,7 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
         </div>
       </div>
 
-      {/* Search Bar */}
+      {/* Search Bar - Condicional abaixo do cabeçalho */}
       {isSearchOpen && (
         <div className="border-b p-4">
           <div className="relative max-w-md mx-auto">
@@ -288,7 +287,7 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
         </div>
       )}
 
-      {/* Messages */}
+      {/* Mensagens - Área central com rolagem */}
       <div className="flex-1 overflow-hidden bg-gray-50">
         <ScrollArea className="h-full p-4">
           {messages.length === 0 ? (
@@ -335,7 +334,7 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
         </ScrollArea>
       </div>
 
-      {/* Reply Preview */}
+      {/* Área de resposta - Acima do campo de entrada quando ativa */}
       {replyTo && (
         <div className="border-t p-2 bg-accent/30 flex items-center gap-2">
           <div className="flex-1 min-w-0">
@@ -351,7 +350,7 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
         </div>
       )}
 
-      {/* Message Input */}
+      {/* Campo de entrada - Fixo na parte inferior */}
       <div className="border-t p-4 bg-white">
         <div className="flex items-end gap-2">
           <Button variant="outline" size="icon" className="rounded-full h-10 w-10" onClick={() => setIsFileModalOpen(true)}>
@@ -384,16 +383,14 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
         </div>
       </div>
 
-      {/* Notes Panel */}
+      {/* Paineis e modais */}
       <NotesPanel open={isNotesOpen} onOpenChange={setIsNotesOpen} chatId={chat.id} />
-
-      {/* File Upload Modal */}
       <FileUploadModal
         open={isFileModalOpen}
         onOpenChange={setIsFileModalOpen}
         onUpload={handleFileUpload}
       />
-    </>
+    </div>
   )
 }
 

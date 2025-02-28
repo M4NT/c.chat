@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useMemo } from "react"
 import { LogOut, MessageSquare, Users, Loader2, AlertTriangle, UserPlus } from "lucide-react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -13,12 +13,14 @@ import { ChatView } from "@/components/chat-view"
 import { ConversationList } from "@/components/conversation-list"
 import type { User, Chat, Group } from "@/types"
 import { useToast } from "@/components/ui/use-toast"
-import { useAuth } from "./auth-provider"
+import { useAuth } from "@/components/auth-provider"
 import { getSupabase, getSupabaseWithFallback, checkSupabaseConnection, getAllUsers } from "@/lib/supabase"
 import { logoutAction, initializeChatData, createExampleUsers } from "@/app/lib/actions"
 import { Database } from "@/types/database.types"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 // Removendo os dados mockados
 // const mockContacts: User[] = [...]
@@ -306,211 +308,198 @@ export function AppShell() {
     }
   };
 
-  // Carregar chats do usuário
-  useEffect(() => {
-    const loadChats = async () => {
-      if (!user) {
-        console.log("Nenhum usuário autenticado, não carregando chats")
-        setIsLoading(false)
+  // Definir a função fetchChats para recarregar os chats do servidor
+  const fetchChats = async () => {
+    if (!user) {
+      console.log("Nenhum usuário autenticado, não carregando chats")
+      return
+    }
+    
+    console.log("Recarregando chats para o usuário:", user.id)
+    try {
+      const supabase = getSupabaseWithFallback()
+      
+      // Buscar chats em que o usuário é participante
+      const { data: chatParticipants, error: participantsError } = await supabase
+        .from('chat_participants')
+        .select('chat_id')
+        .eq('user_id', user.id)
+        .is('left_at', null)
+      
+      if (participantsError) {
+        console.error("Erro ao buscar participantes:", participantsError)
         return
       }
       
-      // Se já detectou erro de conexão, não tentar carregar
-      if (connectionError || timeoutReached) {
+      console.log("Participantes encontrados:", chatParticipants?.length || 0)
+      
+      if (!chatParticipants || chatParticipants.length === 0) {
+        console.log("Nenhum chat encontrado para o usuário")
         return
       }
       
-      console.log("Iniciando busca de chats para o usuário:", user.id)
-      setIsLoading(true)
-      try {
-        const supabase = getSupabaseWithFallback()
-        
-        // Buscar chats em que o usuário é participante
-        const { data: chatParticipants, error: participantsError } = await supabase
+      const chatIds = chatParticipants.map(cp => cp.chat_id)
+      console.log("IDs dos chats:", chatIds)
+      
+      // Buscar informações dos chats
+      const { data: chatsData, error: chatsError } = await supabase
+        .from('chats')
+        .select(`
+          id, 
+          type, 
+          created_at,
+          updated_at,
+          last_message_at,
+          groups(name, description, image_url, tag)
+        `)
+        .in('id', chatIds)
+        .is('deleted_at', null)
+        .order('last_message_at', { ascending: false })
+      
+      if (chatsError) {
+        console.error("Erro ao buscar chats:", chatsError)
+        return
+      }
+      
+      console.log("Chats encontrados:", chatsData?.length || 0)
+      
+      if (!chatsData || chatsData.length === 0) {
+        console.log("Nenhum chat encontrado com os IDs fornecidos")
+        return
+      }
+
+      // Buscar participantes para cada chat
+      const chatPromises = chatsData.map(async (chat) => {
+        const { data: participants, error: participantsError } = await supabase
           .from('chat_participants')
-          .select('chat_id')
-          .eq('user_id', user.id)
-          .is('left_at', null)
-        
-        if (participantsError) {
-          console.error("Erro ao buscar participantes:", participantsError)
-          // Não lançar erro, apenas continuar com lista vazia
-          setChats([])
-          setIsLoading(false)
-          return
-        }
-        
-        console.log("Participantes encontrados:", chatParticipants?.length || 0)
-        
-        if (!chatParticipants || chatParticipants.length === 0) {
-          console.log("Nenhum chat encontrado para o usuário")
-          setChats([])
-          setIsLoading(false)
-          return
-        }
-        
-        const chatIds = chatParticipants.map(cp => cp.chat_id)
-        console.log("IDs dos chats:", chatIds)
-        
-        // Buscar informações dos chats
-        const { data: chatsData, error: chatsError } = await supabase
-          .from('chats')
           .select(`
-            id, 
-            type, 
-            created_at,
-            updated_at,
-            last_message_at,
-            groups(name, description, image_url, tag)
+            user_id,
+            users (
+              id,
+              name,
+              email,
+              avatar_url
+            )
           `)
-          .in('id', chatIds)
-          .is('deleted_at', null)
-          .order('last_message_at', { ascending: false })
-        
-        if (chatsError) {
-          console.error("Erro ao buscar chats:", chatsError)
-          // Não lançar erro, apenas continuar com lista vazia
-          setChats([])
-          setIsLoading(false)
-          return
-        }
-        
-        console.log("Chats encontrados:", chatsData?.length || 0)
-        
-        if (!chatsData || chatsData.length === 0) {
-          console.log("Nenhum chat encontrado com os IDs fornecidos")
-          setChats([])
-          setIsLoading(false)
-          return
-        }
+          .eq('chat_id', chat.id)
+          .is('left_at', null)
 
-        // Buscar participantes para cada chat
-        const chatPromises = chatsData.map(async (chat) => {
-          const { data: participants, error: participantsError } = await supabase
-            .from('chat_participants')
-            .select(`
-              user_id,
-              users (
-                id,
-                name,
-                email,
-                avatar_url
-              )
-            `)
-            .eq('chat_id', chat.id)
-            .is('left_at', null)
-
-          if (participantsError) {
-            console.error(`Erro ao buscar participantes para o chat ${chat.id}:`, participantsError)
-            // Retornar um objeto Chat válido mesmo em caso de erro
-            return {
-              id: chat.id,
-              type: chat.type as 'direct' | 'group',
-              participants: [],
-              timestamp: new Date(chat.last_message_at || chat.updated_at || chat.created_at),
-              messages: []
-            } as Chat;
-          }
-
-          // Buscar última mensagem
-          const { data: lastMessages, error: messagesError } = await supabase
-            .from('messages')
-            .select('id, content, created_at, user_id, users(name)')
-            .eq('chat_id', chat.id)
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false })
-            .limit(1)
-
-          if (messagesError) {
-            console.error(`Erro ao buscar última mensagem para o chat ${chat.id}:`, messagesError)
-          }
-
-          const lastMessage = lastMessages && lastMessages.length > 0 ? lastMessages[0] : null
-
-          // Formatar participantes
-          const formattedParticipants = participants
-            ? participants.map((p: any) => ({
-                id: p.user_id,
-                name: p.users?.name || 'Usuário desconhecido',
-                email: p.users?.email || '',
-                avatar: p.users?.avatar_url || undefined
-              }))
-            : []
-
-          // Determinar o nome do chat
-          let chatName = ''
-          let chatAvatar = undefined
-
-          if (chat.type === 'group' && chat.groups && chat.groups[0]) {
-            // Para grupos, usar o nome do grupo (groups é um array)
-            chatName = chat.groups[0].name || 'Grupo sem nome'
-            chatAvatar = chat.groups[0].image_url
-          } else {
-            // Para chats diretos, usar o nome do outro participante
-            const otherParticipant = formattedParticipants.find(p => p.id !== user.id)
-            chatName = otherParticipant?.name || 'Chat'
-            chatAvatar = otherParticipant?.avatar
-          }
-
-          // Formatar a última mensagem
-          let lastMessageText = ''
-          if (lastMessage) {
-            lastMessageText = lastMessage.content || ''
-          }
-
-          // Criar objeto de chat no formato esperado
-          const formattedChat: Chat = {
+        if (participantsError) {
+          console.error(`Erro ao buscar participantes para o chat ${chat.id}:`, participantsError)
+          // Retornar um objeto Chat válido mesmo em caso de erro
+          return {
             id: chat.id,
             type: chat.type as 'direct' | 'group',
-            participants: formattedParticipants,
-            lastMessage: lastMessageText,
+            participants: [],
             timestamp: new Date(chat.last_message_at || chat.updated_at || chat.created_at),
-            messages: [],
-            groupInfo: chat.type === 'group' && chat.groups && chat.groups[0] ? {
-              id: chat.id,
-              name: chat.groups[0].name || 'Grupo sem nome',
-              tag: chat.groups[0].tag || '',
-              image: chat.groups[0].image_url,
-              participants: formattedParticipants,
-              createdAt: new Date(chat.created_at)
-            } : undefined
-          }
-
-          return formattedChat
-        })
-
-        try {
-          const formattedChats = await Promise.all(chatPromises)
-          console.log("Chats formatados:", formattedChats.length)
-          setChats(formattedChats)
-        } catch (error) {
-          console.error("Erro ao processar chats:", error)
-          // Em caso de erro, definir uma lista vazia em vez de lançar erro
-          setChats([])
-          toast({
-            variant: "destructive",
-            title: "Erro ao carregar conversas",
-            description: "Não foi possível carregar suas conversas. Tente novamente mais tarde."
-          })
-        } finally {
-          setIsLoading(false)
+            messages: []
+          } as Chat;
         }
+
+        // Buscar última mensagem
+        const { data: lastMessages, error: messagesError } = await supabase
+          .from('messages')
+          .select('id, content, created_at, user_id, users(name)')
+          .eq('chat_id', chat.id)
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        if (messagesError) {
+          console.error(`Erro ao buscar última mensagem para o chat ${chat.id}:`, messagesError)
+        }
+
+        const lastMessage = lastMessages && lastMessages.length > 0 ? lastMessages[0] : null
+
+        // Formatar participantes
+        const formattedParticipants = participants
+          ? participants.map((p: any) => ({
+              id: p.user_id,
+              name: p.users?.name || 'Usuário desconhecido',
+              email: p.users?.email || '',
+              avatar: p.users?.avatar_url || undefined
+            }))
+          : []
+
+        // Determinar o nome do chat
+        let chatName = ''
+        let chatAvatar = undefined
+
+        if (chat.type === 'group' && chat.groups && chat.groups[0]) {
+          // Para grupos, usar o nome do grupo (groups é um array)
+          chatName = chat.groups[0].name || 'Grupo sem nome'
+          chatAvatar = chat.groups[0].image_url
+        } else {
+          // Para chats diretos, usar o nome do outro participante
+          const otherParticipant = formattedParticipants.find(p => p.id !== user.id)
+          chatName = otherParticipant?.name || 'Chat'
+          chatAvatar = otherParticipant?.avatar
+        }
+
+        // Formatar a última mensagem
+        let lastMessageText = ''
+        if (lastMessage) {
+          lastMessageText = lastMessage.content || ''
+        }
+
+        // Criar objeto de chat no formato esperado
+        const formattedChat: Chat = {
+          id: chat.id,
+          type: chat.type as 'direct' | 'group',
+          participants: formattedParticipants,
+          lastMessage: lastMessageText,
+          timestamp: new Date(chat.last_message_at || chat.updated_at || chat.created_at),
+          messages: [],
+          groupInfo: chat.type === 'group' && chat.groups && chat.groups[0] ? {
+            id: chat.id,
+            name: chat.groups[0].name || 'Grupo sem nome',
+            tag: chat.groups[0].tag || '',
+            image: chat.groups[0].image_url,
+            participants: formattedParticipants,
+            createdAt: new Date(chat.created_at)
+          } : undefined
+        }
+
+        return formattedChat
+      })
+
+      try {
+        const formattedChats = await Promise.all(chatPromises)
+        console.log("Chats formatados:", formattedChats.length)
+        setChats(formattedChats)
       } catch (error) {
-        console.error('Erro ao carregar chats:', error)
+        console.error("Erro ao processar chats:", error)
+        // Em caso de erro, definir uma lista vazia em vez de lançar erro
         setChats([])
         toast({
           variant: "destructive",
           title: "Erro ao carregar conversas",
           description: "Não foi possível carregar suas conversas. Tente novamente mais tarde."
         })
+      } finally {
         setIsLoading(false)
       }
+    } catch (error) {
+      console.error('Erro ao recarregar chats:', error)
     }
+  }
 
-    loadChats()
-  }, [user, toast, connectionError, timeoutReached])
-
-  const selectedChat = chats.find((chat) => chat.id === selectedChatId)
+  // Garantir que selectedChat seja definido corretamente
+  const selectedChat = useMemo(() => {
+    const chat = chats.find((chat) => chat.id === selectedChatId);
+    
+    if (chat) {
+      console.log("Chat selecionado:", {
+        id: chat.id,
+        type: chat.type,
+        participants: chat.participants.map(p => `${p.name} (${p.id})`)
+      });
+    } else if (selectedChatId) {
+      console.log("Nenhum chat encontrado com ID:", selectedChatId);
+    }
+    
+    return chat;
+  }, [chats, selectedChatId]);
 
   const handleCreateGroup = async (group: {
     name: string
@@ -685,82 +674,132 @@ export function AppShell() {
   }
 
   const handleStartChat = async (userId: string) => {
-    if (!user) return
+    console.log("Iniciando chat com usuário:", userId);
+    
+    // Criar um usuário temporário se não estivermos autenticados
+    const tempCurrentUser = user || {
+      id: "temp-user",
+      name: "Usuário Temporário",
+      email: "temp@example.com",
+      avatar: null,
+      status: "online"
+    };
     
     try {
       // Verificar se já existe um chat direto com este usuário
       const existingChat = chats.find(
         (c) => c.type === "direct" && c.participants.some((p) => p.id === userId)
-      )
+      );
       
       if (existingChat) {
-        setSelectedChatId(existingChat.id)
-        return
+        // Selecionar chat existente
+        console.log("Chat existente encontrado, ID:", existingChat.id);
+        setSelectedChatId(existingChat.id);
+        return;
       }
       
-      const supabase = getSupabase()
+      // Buscar contato na lista de contatos
+      const selectedContact = contacts.find(contact => contact.id === userId);
       
-      // Criar um novo chat
-      const { data: chatData, error: chatError } = await supabase
-        .from('chats')
-        .insert({
-          type: 'direct',
-          company_id: null, // Implementar seleção de empresa posteriormente
-          created_by: user.id,
-        })
-        .select('id')
-        .single()
+      if (!selectedContact) {
+        console.error("Erro: Contato não encontrado na lista.");
+        toast({
+          variant: "destructive",
+          title: "Contato não encontrado",
+          description: "Não foi possível encontrar o contato selecionado."
+        });
+        return;
+      }
       
-      if (chatError) throw chatError
+      console.log("Contato selecionado:", selectedContact.name, selectedContact.id);
       
-      // Adicionar participantes
-      const participantsToInsert = [
-        { chat_id: chatData.id, user_id: user.id, role: 'member' },
-        { chat_id: chatData.id, user_id: userId, role: 'member' }
-      ]
+      // Criar um ID temporário para o chat
+      const tempChatId = `temp-${Date.now()}`;
       
-      const { error: participantsError } = await supabase
-        .from('chat_participants')
-        .insert(participantsToInsert)
-      
-      if (participantsError) throw participantsError
-      
-      // Buscar informações do outro usuário
-      const { data: otherUser, error: userError } = await supabase
-        .from('users')
-        .select('id, name, email, avatar_url, status')
-        .eq('id', userId)
-        .single()
-      
-      if (userError) throw userError
-      
-      // Adicionar o novo chat à lista
-      const newChat: Chat = {
-        id: chatData.id,
-        type: "direct",
+      // Criar um chat temporário enquanto a requisição é processada
+      const tempChat = {
+        id: tempChatId,
+        type: "direct" as "direct" | "group",
         participants: [
-          currentUser,
-          {
-            id: otherUser.id,
-            name: otherUser.name,
-            email: otherUser.email,
-            avatar: otherUser.avatar_url || undefined,
-            status: otherUser.status || "offline"
-          }
+          tempCurrentUser,
+          selectedContact
         ],
         timestamp: new Date(),
         messages: [],
-      }
+        lastMessage: "Conversa iniciada"
+      };
       
-      setChats((prev) => [...prev, newChat])
-      setSelectedChatId(newChat.id)
+      console.log("Criando chat temporário:", tempChat);
+      
+      // Atualizar o estado com o chat temporário e selecioná-lo imediatamente
+      setChats(prevChats => [...prevChats, tempChat]);
+      setSelectedChatId(tempChatId);
+      
+      console.log("Chat temporário criado e selecionado:", tempChatId);
+      
+      // Só tentar criar o chat real no banco se o usuário estiver autenticado
+      if (user) {
+        // Em paralelo, tentar criar o chat real no banco de dados
+        try {
+          const supabase = createClientComponentClient<Database>();
+          
+          // Criar um novo chat
+          const { data: chatData, error: chatError } = await supabase
+            .from('chats')
+            .insert({
+              type: 'direct',
+            })
+            .select('id')
+            .single();
+          
+          if (chatError) {
+            console.error("Erro ao criar chat:", chatError);
+            // Continuamos usando o chat temporário, sem mostrar erro ao usuário
+            return;
+          }
+          
+          // Adicionar participantes
+          const participantsToInsert = [
+            { chat_id: chatData.id, user_id: user.id },
+            { chat_id: chatData.id, user_id: userId }
+          ];
+          
+          const { error: participantsError } = await supabase
+            .from('chat_participants')
+            .insert(participantsToInsert);
+          
+          if (participantsError) {
+            console.error("Erro ao adicionar participantes:", participantsError);
+            // Continuamos usando o chat temporário, sem mostrar erro ao usuário
+            return;
+          }
+          
+          console.log("Chat criado com sucesso no banco de dados, ID:", chatData.id);
+          
+          // Não recarregar a página, apenas atualizar o ID do chat temporário para o real
+          setChats(prevChats => 
+            prevChats.map(chat => 
+              chat.id === tempChatId 
+                ? { ...chat, id: chatData.id } 
+                : chat
+            )
+          );
+          setSelectedChatId(chatData.id);
+        } catch (dbError) {
+          // Se houver erro na comunicação com o banco, apenas continuamos com o chat temporário
+          console.error("Erro na comunicação com o banco de dados:", dbError);
+          // Não mostramos erro ao usuário, já que o chat temporário está funcionando
+        }
+      } else {
+        console.log("Usuário não autenticado. Usando apenas o chat temporário.");
+      }
     } catch (error) {
-      console.error('Erro ao iniciar conversa:', error)
+      console.error("Erro ao iniciar chat:", error);
       toast({
         variant: "destructive",
         title: "Erro ao iniciar conversa",
-        description: "Não foi possível iniciar a conversa. Tente novamente mais tarde."
-      })
+        description: "Ocorreu um erro ao tentar iniciar a conversa. O chat temporário será usado."
+      });
     }
   }
 

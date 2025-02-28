@@ -116,25 +116,42 @@ export function ConversationList({
     <button
       key={contact.id}
       className="flex items-center gap-3 p-4 hover:bg-accent text-left w-full rounded-md transition-colors"
-      onClick={() => onStartChat(contact.id)}
+      onClick={() => {
+        console.log("Clique no contato:", contact.name, contact.id);
+        
+        if (typeof onStartChat === 'function') {
+          try {
+            onStartChat(contact.id);
+            console.log("Função onStartChat chamada com sucesso");
+          } catch (error) {
+            console.error("Erro ao chamar onStartChat:", error);
+          }
+        } else {
+          console.error("Erro: onStartChat não é uma função");
+        }
+      }}
     >
       <div className="relative">
         <Avatar>
           <AvatarImage src={contact.avatar} />
           <AvatarFallback>
             {contact.name
-              .split(" ")
-              .map((n) => n[0])
-              .join("")}
+              ? contact.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+              : "U"}
           </AvatarFallback>
         </Avatar>
         {contact.status === "online" && (
           <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-background" />
         )}
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-w-0">
         <div className="font-medium">{contact.name}</div>
-        <div className="text-sm text-muted-foreground truncate">{contact.email}</div>
+        {contact.email && (
+          <div className="text-sm text-muted-foreground truncate">{contact.email}</div>
+        )}
       </div>
     </button>
   )

@@ -94,7 +94,7 @@ export function MessageBubble({
 
   return (
     <div
-      className={cn("group flex gap-3", isCurrentUser ? "ml-[30px] flex-row-reverse" : "mr-[30px]")}
+      className={cn("group flex gap-3 my-2", isCurrentUser ? "ml-[30px] flex-row-reverse" : "mr-[30px]")}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
@@ -131,7 +131,14 @@ export function MessageBubble({
         )}
 
         <div className="relative">
-          <div className={cn("rounded-lg p-3", isCurrentUser ? "bg-primary text-primary-foreground" : "bg-accent")}>
+          <div 
+            className={cn(
+              "rounded-lg p-3", 
+              isCurrentUser 
+                ? "bg-primary text-primary-foreground" 
+                : "bg-white border border-gray-200 shadow-sm"
+            )}
+          >
             {renderContent()}
           </div>
 

@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils"
 
 import { useEffect, useRef, useState } from "react"
-import { Copy, File, Paperclip, Search, Send, X } from "lucide-react"
+import { Copy, File, Paperclip, Search, Send, X, Reply } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -174,7 +174,7 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
   return (
     <>
       {/* Chat Header */}
-      <div className="border-b p-4 flex items-center justify-between">
+      <div className="border-b p-4 flex items-center justify-between bg-white shadow-sm">
         <div className="flex items-center gap-3">
           <Avatar>
             <AvatarImage
@@ -248,112 +248,151 @@ export function ChatView({ chat, currentUser, onSendMessage }: ChatViewProps) {
       {isSearchOpen && (
         <div className="border-b p-4">
           <div className="relative max-w-md mx-auto">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar na conversa..."
+              className="pl-8 pr-8"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
             />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1 h-7 w-7"
+                onClick={() => setSearchQuery("")}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
           {filteredMessages.length > 0 && (
-            <ScrollArea className="mt-2 max-h-40 max-w-md mx-auto rounded-md border">
+            <div className="mt-2 max-h-40 overflow-y-auto rounded-md border bg-background p-2">
+              <p className="text-xs text-muted-foreground mb-2">
+                {filteredMessages.length} {filteredMessages.length === 1 ? "resultado" : "resultados"}
+              </p>
               {filteredMessages.map((message) => (
                 <button
                   key={message.id}
-                  className="w-full px-4 py-2 text-left hover:bg-accent flex items-center gap-2"
+                  className={`w-full text-left p-2 text-sm rounded-md hover:bg-accent ${
+                    selectedSearchResult === message.id ? "bg-accent" : ""
+                  }`}
                   onClick={() => scrollToMessage(message.id)}
                 >
-                  <Avatar className="h-6 w-6">
-                    <AvatarImage src={message.sender.avatar} />
-                    <AvatarFallback>{message.sender.name[0]}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{message.sender.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{message.content}</p>
-                  </div>
+                  <div className="font-medium">{message.sender.name}</div>
+                  <div className="text-muted-foreground truncate">{message.content}</div>
                 </button>
               ))}
-            </ScrollArea>
+            </div>
           )}
         </div>
       )}
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-4">
-        <div className="space-y-4">
-          {messages.map((message, index) => (
-            <div
-              key={message.id}
-              ref={(el) => {
-                if (el) messageRefs.current[message.id] = el
-              }}
-              className={cn(
-                "transition-colors duration-300",
-                selectedSearchResult === message.id && "bg-yellow-100 dark:bg-yellow-900/20",
-              )}
-            >
-              <MessageBubble
-                message={message}
-                isCurrentUser={message.sender.id === currentUser.id}
-                showAvatar={index === 0 || messages[index - 1].sender.id !== message.sender.id}
-                onReply={setReplyTo}
-                onReact={(message, reaction) => {
-                  // Implement reaction logic
-                  toast({
-                    description: `Reação ${reaction} adicionada.`,
-                  })
-                }}
-              />
+      <div className="flex-1 overflow-hidden bg-gray-50">
+        <ScrollArea className="h-full p-4">
+          {messages.length === 0 ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <p className="text-muted-foreground">Nenhuma mensagem ainda</p>
+                <p className="text-sm text-muted-foreground">Envie uma mensagem para iniciar a conversa</p>
+              </div>
             </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-      </ScrollArea>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((message, index) => {
+                const showAvatar =
+                  index === 0 ||
+                  messages[index - 1].sender.id !== message.sender.id ||
+                  (message.timestamp instanceof Date ? message.timestamp : new Date(message.timestamp)).getTime() - 
+                  (messages[index - 1].timestamp instanceof Date ? messages[index - 1].timestamp : new Date(messages[index - 1].timestamp)).getTime() >
+                    5 * 60 * 1000
+
+                return (
+                  <div
+                    key={message.id}
+                    ref={(el) => {
+                      if (el) messageRefs.current[message.id] = el
+                    }}
+                  >
+                    <MessageBubble
+                      message={message}
+                      isCurrentUser={message.sender.id === currentUser.id}
+                      showAvatar={showAvatar}
+                      isGroupChat={chat.type === "group"}
+                      onReply={setReplyTo}
+                      onReact={(msg, emoji) => {
+                        // Implementar reações
+                        console.log("Reagir com", emoji, "à mensagem", msg.id)
+                      }}
+                    />
+                  </div>
+                )
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </ScrollArea>
+      </div>
 
       {/* Reply Preview */}
       {replyTo && (
-        <div className="border-t p-2 flex items-center justify-between bg-accent/50">
-          <div className="flex items-center gap-2">
-            <div className="w-1 h-8 bg-primary rounded" />
-            <div>
-              <p className="text-sm font-medium">{replyTo.sender.name}</p>
-              <p className="text-sm text-muted-foreground truncate">{replyTo.content}</p>
+        <div className="border-t p-2 bg-accent/30 flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium flex items-center gap-1">
+              <Reply className="h-3 w-3" />
+              Respondendo para {replyTo.sender.name}
             </div>
+            <div className="text-sm text-muted-foreground truncate">{replyTo.content}</div>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setReplyTo(null)} className="h-8 w-8">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setReplyTo(null)}>
             <X className="h-4 w-4" />
           </Button>
         </div>
       )}
 
       {/* Message Input */}
-      <div className="border-t p-4">
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder="Digite sua mensagem..."
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault()
-                handleSendMessage()
-              }
-            }}
-          />
-          <Button variant="ghost" size="icon" onClick={() => setIsFileModalOpen(true)}>
+      <div className="border-t p-4 bg-white">
+        <div className="flex items-end gap-2">
+          <Button variant="outline" size="icon" className="rounded-full h-10 w-10" onClick={() => setIsFileModalOpen(true)}>
             <Paperclip className="h-5 w-5" />
           </Button>
+          <div className="flex-1 relative">
+            <Input
+              placeholder="Digite uma mensagem..."
+              className="pr-10 min-h-[2.5rem] py-5"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSendMessage()
+                }
+              }}
+            />
+          </div>
           <AudioRecorder onRecordingComplete={handleAudioComplete} />
-          <Button onClick={handleSendMessage}>
+          <Button
+            type="submit"
+            size="icon"
+            className="rounded-full h-10 w-10"
+            onClick={handleSendMessage}
+            disabled={!newMessage.trim()}
+          >
             <Send className="h-5 w-5" />
           </Button>
         </div>
       </div>
 
-      {/* Panels and Modals */}
-      <NotesPanel chatId={chat.id} open={isNotesOpen} onOpenChange={setIsNotesOpen} />
-      <FileUploadModal open={isFileModalOpen} onOpenChange={setIsFileModalOpen} onUpload={handleFileUpload} />
+      {/* Notes Panel */}
+      <NotesPanel open={isNotesOpen} onOpenChange={setIsNotesOpen} chatId={chat.id} />
+
+      {/* File Upload Modal */}
+      <FileUploadModal
+        open={isFileModalOpen}
+        onOpenChange={setIsFileModalOpen}
+        onUpload={handleFileUpload}
+      />
     </>
   )
 }

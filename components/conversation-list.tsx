@@ -136,23 +136,12 @@ export function ConversationList({
         <div className="font-medium">{contact.name}</div>
         <div className="text-sm text-muted-foreground truncate">{contact.email}</div>
       </div>
-      <Button 
-        variant="ghost" 
-        size="icon" 
-        className="h-8 w-8 opacity-0 group-hover:opacity-100 hover:bg-primary/10 hover:text-primary"
-        onClick={(e) => {
-          e.stopPropagation();
-          onStartChat(contact.id);
-        }}
-      >
-        <UserPlus className="h-4 w-4" />
-      </Button>
     </button>
   )
 
   return (
-    <div className="w-80 flex flex-col border-r">
-      <div className="p-4 border-b">
+    <div className="w-80 flex flex-col border-r bg-gray-50">
+      <div className="p-4 border-b bg-white">
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -164,7 +153,7 @@ export function ConversationList({
         </div>
       </div>
 
-      <div className="px-4 py-2 flex items-center justify-between">
+      <div className="px-4 py-2 flex items-center justify-between bg-white">
         <Button variant="outline" size="sm" className="flex-1 mr-2" onClick={() => setIsGroupModalOpen(true)}>
           <Users className="h-4 w-4 mr-2" />
           Criar Grupo
@@ -205,7 +194,7 @@ export function ConversationList({
       
       <Separator />
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 bg-gray-50">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -223,178 +212,122 @@ export function ConversationList({
                 </div>
                 
                 {filteredConversations.map((conversation) => (
-                  <Button
+                  <button
                     key={conversation.id}
-                    variant={selectedId === conversation.id ? "secondary" : "ghost"}
-                    className="w-full justify-start mb-1 px-2"
+                    className={`w-full justify-start mb-1 px-3 py-3 rounded-lg flex items-center ${
+                      selectedId === conversation.id ? "bg-white shadow-sm" : "hover:bg-white"
+                    }`}
                     onClick={() => onSelect(conversation.id)}
                   >
                     <div className="flex items-center w-full">
-                      <Avatar className="h-9 w-9 mr-2">
-                        <AvatarImage
-                          src={
-                            conversation.type === "direct"
-                              ? conversation.user?.avatar
-                              : conversation.groupInfo?.image
-                          }
-                        />
-                        <AvatarFallback>
-                          {conversation.type === "direct"
-                            ? conversation.user?.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")
-                            : conversation.groupInfo?.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 overflow-hidden">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium truncate">
+                      <div className="relative">
+                        <Avatar className="h-10 w-10 mr-3">
+                          <AvatarImage
+                            src={
+                              conversation.type === "direct"
+                                ? conversation.user?.avatar
+                                : conversation.groupInfo?.image
+                            }
+                          />
+                          <AvatarFallback>
                             {conversation.type === "direct"
                               ? conversation.user?.name
-                              : conversation.groupInfo?.name}
-                          </span>
-                          {conversation.timestamp && (
-                            <span className="text-xs text-muted-foreground ml-1 shrink-0">
-                              {formatDistanceToNow(conversation.timestamp, {
-                                addSuffix: true,
-                                locale: ptBR,
-                              })}
-                            </span>
-                          )}
-                        </div>
-                        {conversation.lastMessage && (
-                          <div className="text-xs text-muted-foreground truncate">
-                            {conversation.lastMessage}
-                          </div>
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")
+                              : conversation.groupInfo?.name
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")}
+                          </AvatarFallback>
+                        </Avatar>
+                        {conversation.type === "direct" && conversation.user?.status === "online" && (
+                          <span className="absolute bottom-0 right-3 w-3 h-3 rounded-full bg-green-500 border-2 border-background" />
                         )}
                       </div>
-                      <ConversationActions
-                        onMute={() => handleMute(conversation.id)}
-                        onDelete={() => handleDelete(conversation.id)}
-                        onFavorite={() => handleFavorite(conversation.id)}
-                        onShare={() => handleShare(conversation.id)}
-                      />
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="font-medium">
+                          {conversation.type === "direct"
+                            ? conversation.user?.name
+                            : conversation.groupInfo?.name}
+                        </div>
+                        <div className="text-sm text-muted-foreground truncate">
+                          {conversation.lastMessage || "Iniciar conversa..."}
+                        </div>
+                      </div>
+                      {conversation.timestamp && (
+                        <div className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                          {formatDistanceToNow(new Date(conversation.timestamp), {
+                            addSuffix: false,
+                            locale: ptBR,
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </Button>
+                  </button>
                 ))}
+              </>
+            )}
+
+            {/* Seção de Contatos */}
+            {filteredContacts.length > 0 && (
+              <>
+                <div className="px-2 py-1.5 mt-2">
+                  <div className="text-xs font-semibold text-muted-foreground flex items-center">
+                    <Users className="h-3.5 w-3.5 mr-1" />
+                    CONTATOS
+                  </div>
+                </div>
                 
-                {(onlineContacts.length > 0 || offlineContacts.length > 0) && (
-                  <Separator className="my-2" />
+                {/* Contatos Online */}
+                {onlineContacts.length > 0 && (
+                  <>
+                    <div className="px-2 py-1 text-xs text-muted-foreground">
+                      <div className="flex items-center">
+                        <CircleDot className="h-3 w-3 mr-1 text-green-500" />
+                        Online ({onlineContacts.length})
+                      </div>
+                    </div>
+                    {onlineContacts.map((contact) => (
+                      <ContactItem key={contact.id} contact={contact} />
+                    ))}
+                  </>
+                )}
+                
+                {/* Contatos Offline */}
+                {offlineContacts.length > 0 && (
+                  <>
+                    <div className="px-2 py-1 text-xs text-muted-foreground">
+                      <div className="flex items-center">
+                        <Circle className="h-3 w-3 mr-1 text-gray-400" />
+                        Offline ({offlineContacts.length})
+                      </div>
+                    </div>
+                    {offlineContacts.map((contact) => (
+                      <ContactItem key={contact.id} contact={contact} />
+                    ))}
+                  </>
                 )}
               </>
             )}
             
-            {/* Seção de Contatos Online */}
-            {contactFilter !== "offline" && onlineContacts.length > 0 && (
-              <>
-                <div className="px-2 py-1.5">
-                  <div className="text-xs font-semibold text-muted-foreground flex items-center">
-                    <CircleDot className="h-3.5 w-3.5 mr-1 text-green-500" />
-                    CONTATOS ONLINE
-                  </div>
-                </div>
-                
-                {onlineContacts.map((contact) => (
-                  <Button
-                    key={contact.id}
-                    variant="ghost"
-                    className="w-full justify-start mb-1 px-2"
-                    onClick={() => onStartChat(contact.id)}
-                  >
-                    <div className="flex items-center w-full">
-                      <Avatar className="h-9 w-9 mr-2">
-                        <AvatarImage src={contact.avatar} />
-                        <AvatarFallback>
-                          {contact.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 overflow-hidden">
-                        <div className="flex items-center">
-                          <span className="text-sm font-medium truncate">
-                            {contact.name}
-                          </span>
-                          <span className="ml-2 h-2 w-2 rounded-full bg-green-500" />
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {contact.email}
-                        </div>
-                      </div>
-                    </div>
-                  </Button>
-                ))}
-              </>
-            )}
-            
-            {/* Seção de Contatos Offline */}
-            {contactFilter !== "online" && offlineContacts.length > 0 && (
-              <>
-                <div className="px-2 py-1.5">
-                  <div className="text-xs font-semibold text-muted-foreground flex items-center">
-                    <Circle className="h-3.5 w-3.5 mr-1" />
-                    CONTATOS OFFLINE
-                  </div>
-                </div>
-                
-                {offlineContacts.map((contact) => (
-                  <Button
-                    key={contact.id}
-                    variant="ghost"
-                    className="w-full justify-start mb-1 px-2"
-                    onClick={() => onStartChat(contact.id)}
-                  >
-                    <div className="flex items-center w-full">
-                      <Avatar className="h-9 w-9 mr-2">
-                        <AvatarImage src={contact.avatar} />
-                        <AvatarFallback>
-                          {contact.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 overflow-hidden">
-                        <div className="flex items-center">
-                          <span className="text-sm font-medium truncate">
-                            {contact.name}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {contact.email}
-                        </div>
-                      </div>
-                    </div>
-                  </Button>
-                ))}
-              </>
-            )}
-            
-            {/* Mensagem quando não há conversas nem contatos */}
             {filteredConversations.length === 0 && filteredContacts.length === 0 && (
-              <div className="px-4 py-8 text-center text-muted-foreground">
-                {searchQuery ? (
-                  <p>Nenhum resultado encontrado para "{searchQuery}"</p>
-                ) : (
-                  <p>Nenhuma conversa ou contato disponível</p>
-                )}
+              <div className="p-4 text-center text-muted-foreground">
+                <p>Nenhuma conversa ou contato encontrado</p>
               </div>
             )}
           </div>
         )}
       </ScrollArea>
       
-      <GroupModal
-        open={isGroupModalOpen}
-        onOpenChange={setIsGroupModalOpen}
-        contacts={contacts}
-        onCreateGroup={onCreateGroup}
-      />
+      {isGroupModalOpen && (
+        <GroupModal
+          open={isGroupModalOpen}
+          onOpenChange={setIsGroupModalOpen}
+          contacts={contacts}
+          onCreateGroup={onCreateGroup}
+        />
+      )}
     </div>
   )
 }

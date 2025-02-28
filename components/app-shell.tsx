@@ -828,9 +828,9 @@ export function AppShell() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
-      <div className="w-20 border-r flex flex-col items-center py-4 gap-6">
+      <div className="w-20 border-r flex flex-col items-center py-4 gap-6 bg-white">
         <div className="w-12 h-12">
           <Image src="/saudecredlogo.svg" alt="SaudeCred Logo" width={48} height={48} className="rounded-lg" />
         </div>
@@ -900,7 +900,7 @@ export function AppShell() {
           onSendMessage={(content, type, file) => handleSendMessage(selectedChat.id, content, type, file)}
         />
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center p-4 text-muted-foreground">
+        <div className="flex-1 flex flex-col items-center justify-center p-4 text-muted-foreground bg-gray-50">
           <p className="mb-4">Selecione uma conversa ou contato para começar</p>
           
           {chats.length === 0 && contacts.length === 0 && !isLoading && !isLoadingContacts && (

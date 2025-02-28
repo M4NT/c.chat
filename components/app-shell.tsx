@@ -14,8 +14,8 @@ import { ConversationList } from "@/components/conversation-list"
 import type { User, Chat, Group } from "@/types"
 import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "./auth-provider"
-import { getSupabase, getSupabaseWithFallback, checkSupabaseConnection } from "@/lib/supabase"
-import { logoutAction, initializeChatData } from "@/app/lib/actions"
+import { getSupabase, getSupabaseWithFallback, checkSupabaseConnection, getAllUsers } from "@/lib/supabase"
+import { logoutAction, initializeChatData, createExampleUsers } from "@/app/lib/actions"
 import { Database } from "@/types/database.types"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -29,7 +29,6 @@ type DbGroup = Database['public']['Tables']['groups']['Row']
 
 export function AppShell() {
   const { user, signOut } = useAuth()
-  const [currentView, setCurrentView] = useState<View>("contacts")
   const [selectedChatId, setSelectedChatId] = useState<string>()
   const [chats, setChats] = useState<Chat[]>([])
   const [contacts, setContacts] = useState<User[]>([])
@@ -367,76 +366,66 @@ export function AppShell() {
       console.log("Iniciando carregamento de contatos para o usuário:", user.id)
       setIsLoadingContacts(true)
       try {
-        const supabase = getSupabaseWithFallback()
+        // Usar a nova função para buscar todos os usuários
+        const { data: usersData, error: usersError } = await getAllUsers()
         
-        // Usar RPC para buscar usuários, contornando as políticas RLS
-        let usersData;
-        let usersError;
-        
-        try {
-          console.log("Tentando buscar usuários via RPC...")
-          const response = await supabase.rpc('get_all_users', {
-            current_user_id: user.id
-          });
-          usersData = response.data;
-          usersError = response.error;
-          
-          if (usersError) {
-            console.error("Erro ao buscar usuários via RPC:", usersError)
-          } else {
-            console.log("Usuários encontrados via RPC:", usersData?.length || 0)
-          }
-        } catch (rpcError) {
-          console.error("Erro ao chamar RPC:", rpcError);
-          usersError = rpcError;
+        if (usersError) {
+          console.error("Erro ao buscar usuários:", usersError)
+          throw usersError
         }
         
-        if (usersError || !usersData) {
-          console.log("Tentando buscar usuários diretamente...")
-          const { data: directUsersData, error: directUsersError } = await supabase
-            .from('users')
-            .select('id, name, email, avatar_url, status, last_seen')
-            .neq('id', user.id)
-            .is('deleted_at', null)
-            .order('name')
-          
-          if (directUsersError) {
-            console.error("Erro ao buscar usuários diretamente:", directUsersError)
-            throw directUsersError
-          }
-          
-          usersData = directUsersData
-          console.log("Usuários encontrados diretamente:", usersData?.length || 0)
-        }
+        console.log("Usuários encontrados:", usersData?.length || 0, usersData)
         
-        // Verificar se não há usuários e inicializar dados de exemplo se necessário
+        // Verificar se não há usuários e criar usuários de exemplo
         if (!usersData || usersData.length === 0) {
-          console.log("Nenhum usuário encontrado, usando contatos de exemplo...")
+          console.log("Nenhum usuário encontrado, criando usuários de exemplo...")
           
-          // Criar alguns contatos de exemplo para não deixar a interface vazia
-          const exampleContacts = [
-            {
-              id: "example-1",
-              name: "Maria Silva",
-              email: "maria@exemplo.com",
-              status: "online"
-            },
-            {
-              id: "example-2",
-              name: "João Santos",
-              email: "joao@exemplo.com",
-              status: "offline"
-            },
-            {
-              id: "example-3",
-              name: "Ana Oliveira",
-              email: "ana@exemplo.com",
-              status: "online"
-            }
-          ]
-          setContacts(exampleContacts)
-          setIsLoadingContacts(false)
-          return
+          // Criar usuários de exemplo no banco de dados
+          const { success, users } = await createExampleUsers()
+          
+          if (success && users && users.length > 0) {
+            console.log("Usuários de exemplo criados com sucesso:", users)
+            
+            // Converter para o formato esperado pelo componente
+            const formattedContacts = users.map((userData: any) => ({
+              id: userData.id,
+              name: userData.name,
+              email: userData.email,
+              avatar: userData.avatar_url || undefined,
+              status: userData.status || 'offline'
+            }))
+            
+            setContacts(formattedContacts)
+            setIsLoadingContacts(false)
+            return
+          } else {
+            console.log("Não foi possível criar usuários de exemplo, usando dados locais...")
+            
+            // Criar alguns contatos de exemplo para não deixar a interface vazia
+            const exampleContacts = [
+              {
+                id: "example-1",
+                name: "Maria Silva",
+                email: "maria@exemplo.com",
+                status: "online"
+              },
+              {
+                id: "example-2",
+                name: "João Santos",
+                email: "joao@exemplo.com",
+                status: "offline"
+              },
+              {
+                id: "example-3",
+                name: "Ana Oliveira",
+                email: "ana@exemplo.com",
+                status: "online"
+              }
+            ]
+            setContacts(exampleContacts)
+            setIsLoadingContacts(false)
+            return
+          }
         }
         
         // Converter para o formato esperado pelo componente
@@ -1029,18 +1018,10 @@ export function AppShell() {
         </div>
         <Separator />
         <Button
-          variant={currentView === "chat" ? "default" : "ghost"}
+          variant="default"
           size="icon"
-          onClick={() => setCurrentView("chat")}
         >
           <MessageSquare className="h-5 w-5" />
-        </Button>
-        <Button
-          variant={currentView === "contacts" ? "default" : "ghost"}
-          size="icon"
-          onClick={() => setCurrentView("contacts")}
-        >
-          <Users className="h-5 w-5" />
         </Button>
         <div className="mt-auto flex flex-col items-center gap-4">
           <Separator />
@@ -1073,7 +1054,7 @@ export function AppShell() {
         </div>
       </div>
 
-      {/* Conversations List */}
+      {/* Lista unificada de conversas e contatos */}
       <ConversationList
         conversations={chats.map((chat) => ({
           id: chat.id,
@@ -1087,10 +1068,10 @@ export function AppShell() {
         selectedId={selectedChatId}
         onSelect={setSelectedChatId}
         onCreateGroup={handleCreateGroup}
-        isLoading={currentView === "chat" ? isLoading : isLoadingContacts}
-        currentView={currentView}
+        isLoading={isLoading || isLoadingContacts}
         contacts={contacts}
         onStartChat={handleStartChat}
+        currentView="chat"
       />
 
       {/* Chat View */}
@@ -1102,27 +1083,56 @@ export function AppShell() {
         />
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center p-4 text-muted-foreground">
-          {currentView === "chat" ? (
-            <p className="mb-4">Selecione uma conversa para começar</p>
-          ) : (
-            <p className="mb-4">Selecione um contato para iniciar uma conversa</p>
-          )}
+          <p className="mb-4">Selecione uma conversa ou contato para começar</p>
           
-          {chats.length === 0 && !isLoading && currentView === "chat" && (
+          {chats.length === 0 && contacts.length === 0 && !isLoading && !isLoadingContacts && (
             <div className="flex flex-col items-center">
-              <p className="mb-4">Você ainda não tem conversas</p>
-              <Button onClick={() => setCurrentView("contacts")}>
-                Encontrar contatos
-              </Button>
-            </div>
-          )}
-          
-          {contacts.length === 0 && !isLoadingContacts && currentView === "contacts" && (
-            <div className="flex flex-col items-center">
-              <p className="mb-4">Nenhum contato encontrado</p>
-              <Button onClick={handleInitializeChat}>
-                Inicializar dados de exemplo
-              </Button>
+              <p className="mb-4">Você ainda não tem conversas ou contatos</p>
+              <div className="flex flex-col gap-2">
+                <Button onClick={handleInitializeChat}>
+                  Inicializar dados de exemplo
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={async () => {
+                    try {
+                      toast({
+                        description: "Criando usuários de exemplo...",
+                      })
+                      
+                      const response = await fetch('/api/create-example-users')
+                      const data = await response.json()
+                      
+                      if (data.success) {
+                        toast({
+                          title: "Usuários criados",
+                          description: "Usuários de exemplo criados com sucesso. Recarregando a página...",
+                        })
+                        
+                        // Recarregar a página após 2 segundos
+                        setTimeout(() => {
+                          window.location.reload()
+                        }, 2000)
+                      } else {
+                        toast({
+                          variant: "destructive",
+                          title: "Erro ao criar usuários",
+                          description: data.error || "Não foi possível criar usuários de exemplo.",
+                        })
+                      }
+                    } catch (error) {
+                      console.error('Erro ao criar usuários de exemplo:', error)
+                      toast({
+                        variant: "destructive",
+                        title: "Erro ao criar usuários",
+                        description: "Não foi possível criar usuários de exemplo.",
+                      })
+                    }
+                  }}
+                >
+                  Criar usuários de exemplo
+                </Button>
+              </div>
             </div>
           )}
         </div>

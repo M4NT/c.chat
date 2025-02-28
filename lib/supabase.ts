@@ -189,3 +189,37 @@ export function getSupabaseWithFallback() {
 	}
 }
 
+// Função para buscar todos os usuários
+export async function getAllUsers() {
+	try {
+		const supabase = getSupabase()
+		
+		// Buscar usuário atual para excluir da lista
+		const { data: { user } } = await supabase.auth.getUser()
+		
+		if (!user) {
+			console.error('Usuário não autenticado')
+			return { data: [], error: new Error('Usuário não autenticado') }
+		}
+		
+		// Buscar todos os usuários exceto o atual
+		const { data, error } = await supabase
+			.from('users')
+			.select('id, name, email, avatar_url, status, last_seen')
+			.neq('id', user.id)
+			.is('deleted_at', null)
+			.order('name')
+		
+		if (error) {
+			console.error('Erro ao buscar usuários:', error)
+			return { data: [], error }
+		}
+		
+		console.log('Usuários encontrados:', data?.length || 0)
+		return { data, error: null }
+	} catch (error) {
+		console.error('Erro ao buscar usuários:', error)
+		return { data: [], error }
+	}
+}
+

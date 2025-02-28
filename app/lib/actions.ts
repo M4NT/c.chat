@@ -464,4 +464,100 @@ export async function initializeChatData() {
     console.error("Erro ao inicializar dados de chat:", error)
     return { error: 'Ocorreu um erro ao inicializar dados de chat.' }
   }
+}
+
+// Função para criar usuários de exemplo
+export async function createExampleUsers() {
+  try {
+    const supabase = getSupabase()
+    
+    // Obter o usuário atual
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    console.log("Verificando se existem outros usuários...")
+    
+    // Verificar se já existem outros usuários
+    const { data: existingUsers, error: existingUsersError } = await supabase
+      .from('users')
+      .select('id')
+      .limit(10)
+    
+    if (existingUsersError) {
+      console.error("Erro ao verificar usuários existentes:", existingUsersError)
+      return { error: 'Erro ao verificar usuários existentes' }
+    }
+    
+    // Se já existem usuários suficientes, não criar mais
+    if (existingUsers && existingUsers.length >= 3) {
+      console.log("Já existem usuários suficientes, não é necessário criar exemplos")
+      return { 
+        success: true, 
+        message: 'Já existem usuários suficientes',
+        users: existingUsers
+      }
+    }
+    
+    console.log("Criando usuários de exemplo...")
+    
+    // Criar usuários de exemplo
+    const exampleUsers = [
+      { email: 'maria@exemplo.com', name: 'Maria Silva', password: 'senha123', status: 'online' },
+      { email: 'joao@exemplo.com', name: 'João Santos', password: 'senha123', status: 'offline' },
+      { email: 'ana@exemplo.com', name: 'Ana Oliveira', password: 'senha123', status: 'online' },
+      { email: 'pedro@exemplo.com', name: 'Pedro Souza', password: 'senha123', status: 'online' },
+      { email: 'lucia@exemplo.com', name: 'Lúcia Ferreira', password: 'senha123', status: 'offline' }
+    ]
+    
+    const createdUsers = []
+    
+    for (const exampleUser of exampleUsers) {
+      try {
+        // Verificar se o usuário já existe
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id, name, email, avatar_url, status')
+          .eq('email', exampleUser.email)
+          .single()
+        
+        if (existingUser) {
+          console.log("Usuário já existe:", existingUser)
+          createdUsers.push(existingUser)
+          continue
+        }
+        
+        // Criar usuário diretamente na tabela users (sem autenticação)
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .insert({
+            email: exampleUser.email,
+            name: exampleUser.name,
+            password_hash: 'EXEMPLO_NAO_USAR_EM_PRODUCAO',
+            status: exampleUser.status,
+            last_seen: new Date().toISOString()
+          })
+          .select('id, name, email, avatar_url, status')
+        
+        if (userError) {
+          console.error("Erro ao criar usuário de exemplo:", userError)
+          continue
+        }
+        
+        console.log("Usuário de exemplo criado:", userData)
+        if (userData && userData.length > 0) {
+          createdUsers.push(userData[0])
+        }
+      } catch (error) {
+        console.error("Erro ao criar usuário de exemplo:", error)
+      }
+    }
+    
+    return { 
+      success: true, 
+      message: `${createdUsers.length} usuários de exemplo criados`, 
+      users: createdUsers 
+    }
+  } catch (error) {
+    console.error("Erro ao criar usuários de exemplo:", error)
+    return { error: 'Erro ao criar usuários de exemplo' }
+  }
 } 

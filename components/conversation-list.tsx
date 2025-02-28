@@ -1,8 +1,10 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { Search, Users, UserPlus, Filter, Circle, MessageSquare } from "lucide-react"
+import { Search, Users, UserPlus, Filter, Circle, MessageSquare, Plus, CircleDot } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { formatDistanceToNow } from "date-fns"
+import { ptBR } from "date-fns/locale"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -23,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import type { User } from "@/types"
 import type { ConversationListProps } from "@/types"
+import { Loader2 } from "lucide-react"
 
 export function ConversationList({ 
   conversations, 
@@ -39,47 +42,39 @@ export function ConversationList({
   const [contactFilter, setContactFilter] = useState<"all" | "online" | "offline">("all")
   const { toast } = useToast()
 
-  // Filtra conversas com base na consulta de pesquisa
-  const filteredConversations = conversations.filter((conv) =>
-    conv.type === "direct"
-      ? conv.user?.name.toLowerCase().includes(searchQuery.toLowerCase())
-      : conv.groupInfo?.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
-
-  // Filtra contatos com base na consulta de pesquisa e no filtro de status
-  const filteredContacts = useMemo(() => {
-    // Primeiro, remova os contatos que já têm conversas
-    const contactsWithoutConversations = contacts.filter(contact => {
-      return !conversations.some(conv => 
-        conv.type === "direct" && conv.user?.id === contact.id
-      );
-    });
+  // Filtrar conversas com base na pesquisa
+  const filteredConversations = conversations.filter((conversation) => {
+    const userName = conversation.user?.name || conversation.groupInfo?.name || ""
+    return userName.toLowerCase().includes(searchQuery.toLowerCase())
+  })
+  
+  // Filtrar contatos com base na pesquisa e no filtro de status
+  const filteredContacts = contacts.filter((contact) => {
+    // Verificar se o contato já tem uma conversa (para evitar duplicação)
+    const hasConversation = conversations.some(
+      (conv) => conv.type === "direct" && conv.user?.id === contact.id
+    )
     
-    return contactsWithoutConversations.filter((contact) => {
-      // Filtrar por texto de busca
-      const matchesSearch = contact.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           contact.email.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      // Filtrar por status (online/offline)
-      const matchesStatus = 
-        contactFilter === "all" || 
-        (contactFilter === "online" && contact.status === "online") ||
-        (contactFilter === "offline" && contact.status !== "online");
-      
-      return matchesSearch && matchesStatus;
-    });
-  }, [contacts, conversations, searchQuery, contactFilter]);
-
-  // Agrupar contatos por status
-  const groupedContacts = useMemo(() => {
-    const online = filteredContacts.filter(c => c.status === "online");
-    const offline = filteredContacts.filter(c => c.status !== "online");
+    // Não mostrar contatos que já têm conversas
+    if (hasConversation) {
+      return false
+    }
     
-    return {
-      online,
-      offline
-    };
-  }, [filteredContacts]);
+    // Aplicar filtro de pesquisa
+    const matchesSearch = contact.name.toLowerCase().includes(searchQuery.toLowerCase())
+    
+    // Aplicar filtro de status
+    const matchesStatus = 
+      contactFilter === "all" || 
+      (contactFilter === "online" && contact.status === "online") ||
+      (contactFilter === "offline" && contact.status !== "online")
+    
+    return matchesSearch && matchesStatus
+  })
+  
+  // Separar contatos online e offline
+  const onlineContacts = filteredContacts.filter((contact) => contact.status === "online")
+  const offlineContacts = filteredContacts.filter((contact) => contact.status !== "online")
 
   const handleMute = (id: string) => {
     toast({
@@ -156,8 +151,8 @@ export function ConversationList({
   )
 
   return (
-    <div className="w-80 border-r">
-      <div className="p-4">
+    <div className="w-80 flex flex-col border-r">
+      <div className="p-4 border-b">
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -207,144 +202,193 @@ export function ConversationList({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-
+      
       <Separator />
 
-      <ScrollArea className="h-[calc(100vh-8.5rem)]">
+      <ScrollArea className="flex-1">
         {isLoading ? (
-          <div className="flex flex-col py-2">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <ItemSkeleton key={index} />
-            ))}
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex flex-col py-2">
-            {/* Seção de Conversas Ativas */}
+          <div className="p-2">
+            {/* Seção de Conversas */}
             {filteredConversations.length > 0 && (
               <>
-                <div className="px-4 py-2">
-                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                    <MessageSquare className="h-3 w-3 mr-1" />
-                    Conversas ({filteredConversations.length})
-                  </Badge>
+                <div className="px-2 py-1.5">
+                  <div className="text-xs font-semibold text-muted-foreground flex items-center">
+                    <MessageSquare className="h-3.5 w-3.5 mr-1" />
+                    CONVERSAS
+                  </div>
                 </div>
                 
                 {filteredConversations.map((conversation) => (
-                  <div
+                  <Button
                     key={conversation.id}
-                    className={`group flex items-center gap-3 p-4 hover:bg-accent ${
-                      selectedId === conversation.id ? "bg-accent" : ""
-                    }`}
+                    variant={selectedId === conversation.id ? "secondary" : "ghost"}
+                    className="w-full justify-start mb-1 px-2"
+                    onClick={() => onSelect(conversation.id)}
                   >
-                    <button
-                      className="flex flex-1 items-center gap-3"
-                      onClick={() => onSelect(conversation.id)}
-                    >
-                      <div className="relative">
-                        <Avatar>
-                          <AvatarImage
-                            src={
-                              conversation.type === "direct"
-                                ? conversation.user?.avatar
-                                : conversation.groupInfo?.image
-                            }
-                          />
-                          <AvatarFallback>
-                            {conversation.type === "direct"
-                              ? conversation.user?.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")
-                              : conversation.groupInfo?.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                          </AvatarFallback>
-                        </Avatar>
-                        {conversation.type === "direct" && conversation.user?.status === "online" && (
-                          <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-background" />
-                        )}
-                      </div>
-                      <div className="flex-1 overflow-hidden">
-                        <div className="font-medium">
+                    <div className="flex items-center w-full">
+                      <Avatar className="h-9 w-9 mr-2">
+                        <AvatarImage
+                          src={
+                            conversation.type === "direct"
+                              ? conversation.user?.avatar
+                              : conversation.groupInfo?.image
+                          }
+                        />
+                        <AvatarFallback>
                           {conversation.type === "direct"
                             ? conversation.user?.name
-                            : conversation.groupInfo?.name}
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                            : conversation.groupInfo?.name
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 overflow-hidden">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium truncate">
+                            {conversation.type === "direct"
+                              ? conversation.user?.name
+                              : conversation.groupInfo?.name}
+                          </span>
+                          {conversation.timestamp && (
+                            <span className="text-xs text-muted-foreground ml-1 shrink-0">
+                              {formatDistanceToNow(conversation.timestamp, {
+                                addSuffix: true,
+                                locale: ptBR,
+                              })}
+                            </span>
+                          )}
                         </div>
-                        <div className="text-sm text-muted-foreground truncate">
-                          {conversation.lastMessage}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="text-xs text-muted-foreground">
-                          {conversation.timestamp.toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </div>
-                        {conversation.unread && (
-                          <div className="h-2 w-2 rounded-full bg-primary" />
+                        {conversation.lastMessage && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {conversation.lastMessage}
+                          </div>
                         )}
                       </div>
-                    </button>
-                    <ConversationActions
-                      onMute={() => handleMute(conversation.id)}
-                      onShare={() => handleShare(conversation.id)}
-                      onDelete={() => handleDelete(conversation.id)}
-                      onFavorite={() => handleFavorite(conversation.id)}
-                    />
-                  </div>
+                      <ConversationActions
+                        onMute={() => handleMute(conversation.id)}
+                        onDelete={() => handleDelete(conversation.id)}
+                        onFavorite={() => handleFavorite(conversation.id)}
+                        onShare={() => handleShare(conversation.id)}
+                      />
+                    </div>
+                  </Button>
                 ))}
                 
-                {/* Separador entre conversas e contatos */}
-                {(groupedContacts.online.length > 0 || groupedContacts.offline.length > 0) && (
+                {(onlineContacts.length > 0 || offlineContacts.length > 0) && (
                   <Separator className="my-2" />
                 )}
               </>
             )}
             
-            {/* Contatos Online */}
-            {groupedContacts.online.length > 0 && (
+            {/* Seção de Contatos Online */}
+            {contactFilter !== "offline" && onlineContacts.length > 0 && (
               <>
-                <div className="px-4 py-2">
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                    <Circle className="h-2 w-2 fill-green-500 text-green-500 mr-1" />
-                    Contatos Online ({groupedContacts.online.length})
-                  </Badge>
+                <div className="px-2 py-1.5">
+                  <div className="text-xs font-semibold text-muted-foreground flex items-center">
+                    <CircleDot className="h-3.5 w-3.5 mr-1 text-green-500" />
+                    CONTATOS ONLINE
+                  </div>
                 </div>
-                {groupedContacts.online.map((contact) => (
-                  <ContactItem key={contact.id} contact={contact} />
+                
+                {onlineContacts.map((contact) => (
+                  <Button
+                    key={contact.id}
+                    variant="ghost"
+                    className="w-full justify-start mb-1 px-2"
+                    onClick={() => onStartChat(contact.id)}
+                  >
+                    <div className="flex items-center w-full">
+                      <Avatar className="h-9 w-9 mr-2">
+                        <AvatarImage src={contact.avatar} />
+                        <AvatarFallback>
+                          {contact.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 overflow-hidden">
+                        <div className="flex items-center">
+                          <span className="text-sm font-medium truncate">
+                            {contact.name}
+                          </span>
+                          <span className="ml-2 h-2 w-2 rounded-full bg-green-500" />
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {contact.email}
+                        </div>
+                      </div>
+                    </div>
+                  </Button>
                 ))}
               </>
             )}
             
-            {/* Contatos Offline */}
-            {groupedContacts.offline.length > 0 && (
+            {/* Seção de Contatos Offline */}
+            {contactFilter !== "online" && offlineContacts.length > 0 && (
               <>
-                <div className="px-4 py-2 mt-2">
-                  <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
-                    <Circle className="h-2 w-2 fill-gray-300 text-gray-300 mr-1" />
-                    Contatos Offline ({groupedContacts.offline.length})
-                  </Badge>
+                <div className="px-2 py-1.5">
+                  <div className="text-xs font-semibold text-muted-foreground flex items-center">
+                    <Circle className="h-3.5 w-3.5 mr-1" />
+                    CONTATOS OFFLINE
+                  </div>
                 </div>
-                {groupedContacts.offline.map((contact) => (
-                  <ContactItem key={contact.id} contact={contact} />
+                
+                {offlineContacts.map((contact) => (
+                  <Button
+                    key={contact.id}
+                    variant="ghost"
+                    className="w-full justify-start mb-1 px-2"
+                    onClick={() => onStartChat(contact.id)}
+                  >
+                    <div className="flex items-center w-full">
+                      <Avatar className="h-9 w-9 mr-2">
+                        <AvatarImage src={contact.avatar} />
+                        <AvatarFallback>
+                          {contact.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 overflow-hidden">
+                        <div className="flex items-center">
+                          <span className="text-sm font-medium truncate">
+                            {contact.name}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {contact.email}
+                        </div>
+                      </div>
+                    </div>
+                  </Button>
                 ))}
               </>
             )}
             
-            {/* Mensagem quando não há nada para exibir */}
+            {/* Mensagem quando não há conversas nem contatos */}
             {filteredConversations.length === 0 && filteredContacts.length === 0 && (
-              <div className="flex flex-col items-center justify-center p-4 gap-4">
-                <div className="text-center text-muted-foreground">
-                  Nenhuma conversa ou contato encontrado
-                </div>
+              <div className="px-4 py-8 text-center text-muted-foreground">
+                {searchQuery ? (
+                  <p>Nenhum resultado encontrado para "{searchQuery}"</p>
+                ) : (
+                  <p>Nenhuma conversa ou contato disponível</p>
+                )}
               </div>
             )}
           </div>
         )}
       </ScrollArea>
-
+      
       <GroupModal
         open={isGroupModalOpen}
         onOpenChange={setIsGroupModalOpen}

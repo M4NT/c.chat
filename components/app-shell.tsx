@@ -366,8 +366,12 @@ export function AppShell() {
       console.log("Iniciando carregamento de contatos para o usuário:", user.id)
       setIsLoadingContacts(true)
       try {
-        // Usar a nova função para buscar todos os usuários
-        const { data: usersData, error: usersError } = await getAllUsers()
+        // Buscar todos os usuários diretamente da tabela users
+        const supabase = getSupabaseWithFallback()
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, name, email, avatar_url, status, last_seen')
+          .neq('id', user.id) // Excluir o usuário atual
         
         if (usersError) {
           console.error("Erro ao buscar usuários:", usersError)
@@ -376,63 +380,11 @@ export function AppShell() {
         
         console.log("Usuários encontrados:", usersData?.length || 0, usersData)
         
-        // Verificar se não há usuários e criar usuários de exemplo
-        if (!usersData || usersData.length === 0) {
-          console.log("Nenhum usuário encontrado, criando usuários de exemplo...")
-          
-          // Criar usuários de exemplo no banco de dados
-          const { success, users } = await createExampleUsers()
-          
-          if (success && users && users.length > 0) {
-            console.log("Usuários de exemplo criados com sucesso:", users)
-            
-            // Converter para o formato esperado pelo componente
-            const formattedContacts = users.map((userData: any) => ({
-              id: userData.id,
-              name: userData.name,
-              email: userData.email,
-              avatar: userData.avatar_url || undefined,
-              status: userData.status || 'offline'
-            }))
-            
-            setContacts(formattedContacts)
-            setIsLoadingContacts(false)
-            return
-          } else {
-            console.log("Não foi possível criar usuários de exemplo, usando dados locais...")
-            
-            // Criar alguns contatos de exemplo para não deixar a interface vazia
-            const exampleContacts = [
-              {
-                id: "example-1",
-                name: "Maria Silva",
-                email: "maria@exemplo.com",
-                status: "online"
-              },
-              {
-                id: "example-2",
-                name: "João Santos",
-                email: "joao@exemplo.com",
-                status: "offline"
-              },
-              {
-                id: "example-3",
-                name: "Ana Oliveira",
-                email: "ana@exemplo.com",
-                status: "online"
-              }
-            ]
-            setContacts(exampleContacts)
-            setIsLoadingContacts(false)
-            return
-          }
-        }
-        
         // Converter para o formato esperado pelo componente
         const formattedContacts = (usersData || []).map((userData: any) => ({
           id: userData.id,
-          name: userData.name,
-          email: userData.email,
+          name: userData.name || 'Usuário sem nome',
+          email: userData.email || '',
           avatar: userData.avatar_url || undefined,
           status: userData.status || 'offline'
         }))
@@ -444,32 +396,11 @@ export function AppShell() {
         toast({
           variant: "destructive",
           title: "Erro ao carregar contatos",
-          description: "Não foi possível carregar seus contatos. Usando dados de exemplo."
+          description: "Não foi possível carregar seus contatos."
         })
         
-        // Criar alguns contatos de exemplo para não deixar a interface vazia
-        console.log("Criando contatos de exemplo para exibição")
-        const exampleContacts = [
-          {
-            id: "example-1",
-            name: "Maria Silva",
-            email: "maria@exemplo.com",
-            status: "online"
-          },
-          {
-            id: "example-2",
-            name: "João Santos",
-            email: "joao@exemplo.com",
-            status: "offline"
-          },
-          {
-            id: "example-3",
-            name: "Ana Oliveira",
-            email: "ana@exemplo.com",
-            status: "online"
-          }
-        ]
-        setContacts(exampleContacts)
+        // Não criar contatos de exemplo, apenas definir uma lista vazia
+        setContacts([])
       } finally {
         setIsLoadingContacts(false)
       }
@@ -1092,47 +1023,13 @@ export function AppShell() {
                 <Button onClick={handleInitializeChat}>
                   Inicializar dados de exemplo
                 </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={async () => {
-                    try {
-                      toast({
-                        description: "Criando usuários de exemplo...",
-                      })
-                      
-                      const response = await fetch('/api/create-example-users')
-                      const data = await response.json()
-                      
-                      if (data.success) {
-                        toast({
-                          title: "Usuários criados",
-                          description: "Usuários de exemplo criados com sucesso. Recarregando a página...",
-                        })
-                        
-                        // Recarregar a página após 2 segundos
-                        setTimeout(() => {
-                          window.location.reload()
-                        }, 2000)
-                      } else {
-                        toast({
-                          variant: "destructive",
-                          title: "Erro ao criar usuários",
-                          description: data.error || "Não foi possível criar usuários de exemplo.",
-                        })
-                      }
-                    } catch (error) {
-                      console.error('Erro ao criar usuários de exemplo:', error)
-                      toast({
-                        variant: "destructive",
-                        title: "Erro ao criar usuários",
-                        description: "Não foi possível criar usuários de exemplo.",
-                      })
-                    }
-                  }}
-                >
-                  Criar usuários de exemplo
-                </Button>
               </div>
+            </div>
+          )}
+          
+          {contacts.length > 0 && chats.length === 0 && !isLoading && !isLoadingContacts && (
+            <div className="flex flex-col items-center">
+              <p className="mb-4">Você tem contatos disponíveis. Selecione um contato na lista para iniciar uma conversa.</p>
             </div>
           )}
         </div>

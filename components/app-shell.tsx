@@ -210,52 +210,28 @@ export function AppShell() {
     try {
       setIsLoadingContacts(true);
       
-      // Criar contatos de exemplo diretamente, sem depender do Supabase
-      const exampleContacts = [
+      // Criar contatos com os usuários que sabemos que existem
+      const knownContacts = [
         {
-          id: '1',
-          name: 'João Silva',
-          email: 'joao@exemplo.com',
+          id: '8919f8c-030f-4acb-87dc-edc193877332',
+          name: 'TI - Saúde Cred',
+          email: 'ti@saudecred.com.br',
           avatar: '',
           status: 'online',
           lastSeen: new Date().toISOString()
         },
         {
-          id: '2',
-          name: 'Maria Oliveira',
-          email: 'maria@exemplo.com',
-          avatar: '',
-          status: 'offline',
-          lastSeen: new Date().toISOString()
-        },
-        {
-          id: '3',
-          name: 'Pedro Santos',
-          email: 'pedro@exemplo.com',
-          avatar: '',
-          status: 'online',
-          lastSeen: new Date().toISOString()
-        },
-        {
-          id: '4',
-          name: 'Ana Costa',
-          email: 'ana@exemplo.com',
-          avatar: '',
-          status: 'offline',
-          lastSeen: new Date().toISOString()
-        },
-        {
-          id: '5',
-          name: 'Carlos Ferreira',
-          email: 'carlos@exemplo.com',
+          id: 'b1eaa3b7-abef-4559-ac92-92a0ae7bac61',
+          name: 'Yan Mantovani',
+          email: 'yan0507@live.com',
           avatar: '',
           status: 'online',
           lastSeen: new Date().toISOString()
         }
       ];
       
-      console.log("Contatos de exemplo carregados:", exampleContacts);
-      setContacts(exampleContacts);
+      console.log("Contatos conhecidos carregados:", knownContacts);
+      setContacts(knownContacts);
       
       // Tentar buscar usuários do Supabase em segundo plano
       try {
@@ -282,11 +258,11 @@ export function AppShell() {
         }
       } catch (supabaseError) {
         console.error("Erro ao carregar contatos do Supabase:", supabaseError);
-        // Manter os contatos de exemplo se houver erro
+        // Manter os contatos conhecidos se houver erro
       }
     } catch (error) {
       console.error("Erro ao carregar contatos:", error);
-      // Manter os contatos de exemplo vazios em caso de erro
+      // Manter os contatos conhecidos vazios em caso de erro
     } finally {
       setIsLoadingContacts(false);
     }
